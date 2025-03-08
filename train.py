@@ -196,8 +196,7 @@ def main():
     
     model = DeepfakeDetector(
         in_channels=3,
-        dim=args.dim,
-        frame_count=args.frame_count
+        dim=args.dim    
     ).to(device)
     
     print("Hyperparameters:")
