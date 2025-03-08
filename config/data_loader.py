@@ -15,7 +15,7 @@ class FaceForensicsLoader(Dataset):
                  split='train',
                  frame_count=16,
                  transform=None,
-                 compression='c23',
+                 compression='C23',
                  methods=['Deepfakes', 'Face2Face', 'FaceSwap', 'NeuralTextures']):
         """
         初始化FaceForensicsLoader
