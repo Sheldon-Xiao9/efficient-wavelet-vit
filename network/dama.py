@@ -77,21 +77,32 @@ class DAMA(nn.Module):
         Input: [B, C, H, W]
         Output: [B, 3*C, H/2, W/2]
         """
-        ll, hf = self.dwt(x)
-        high_freqs = []
         B, C, H, W = x.shape
+        high_freqs = []
         
-        for level, hf in enumerate(hf):
-            if level >= self.levels:
-                break
+        # 第一级小波变换
+        ll, hf1 = self.dwt(x)
+        hf1 = hf1[0].reshape(B, 3*C, H//2, W//2)
+        hf1_compressed = self.hf_conv(hf1) # 提取特征同时压缩通道
+        high_freqs.append(hf1_compressed)
+        
+        # 第二级小波变换
+        if self.levels >=2:
+            ll2, hf2 = self.dwt(ll)
+            hf2 = hf2[0].reshape(B, 3*C, H//4, W//4)
+            hf2_compressed = self.hf_conv(hf2)
             
-            # 将高频分量拼接，并按通道数压缩（3*C -> C）
-            hf = hf[0].reshape(B, 3*C, H//2, W//2)
-            hf_feats = self.hf_conv(hf)
-            high_freqs.append(hf_feats)
+            hf2_upsampled = F.interpolate(hf2_compressed, size=(H//2, W//2), mode='bilinear')
+            high_freqs.append(hf2_upsampled)
+        
+        if self.levels >= 3:
+            _, hf3 = self.dwt(ll2)
+            hf3 = hf3[0].reshape(B, 3*C, H//8, W//8)
+            hf3_compressed = self.hf_conv(hf3)
             
-            ll, hf = self.dwt(ll)
-            
+            hf3_upsampled = F.interpolate(hf3_compressed, size=(H//2, W//2), mode='bilinear')
+            high_freqs.append(hf3_upsampled)
+        
         return torch.cat(high_freqs, dim=1)
         
     def forward(self, x, batch_size=16):
@@ -101,58 +112,55 @@ class DAMA(nn.Module):
         
         # 分批处理视频帧
         for start_idx in range(0, K, batch_size):
+            # 清理缓存
+            torch.cuda.empty_cache()
+            
             end_idx = min(start_idx + batch_size, K)
-            current_batch_size = end_idx - start_idx
+            batch_frames = x[:, start_idx:end_idx] # [B, batch_size, C, H, W]
+
+            batch_results = []
+            for i in range(end_idx - start_idx):
+                frame_rgb = batch_frames[:, i] # [B, C, H, W]
+                frame = self.input_conv(frame_rgb)
+                
+                # 获取高频特征
+                hf = self.wavelet_transform(frame)
+                hf = self.multiscale_fusion(hf) # [B, dim, H/2, W/2]
+                
+                # 生成偏移量（融合原始帧与低频）
+                hf_upsampled = F.interpolate(hf, size=(H,W), mode='bilinear')
+                offset_input = torch.cat([frame, hf_upsampled], dim=1)
+                offsets = self.shared_offset_net(offset_input)
+                
+                space_offsets = offsets[:,:2*3*3*self.deform_groups]
+                freq_offsets = offsets[:,2*3*3*self.deform_groups:]
+                
+                # 空间处理
+                space_feats = self.space_deform_conv(frame, space_offsets)
+                space_feats = self.space_att(space_feats) # [B, dim, H/2, W/2]
+                
+                # 频域处理
+                freq_feats = self.freq_deform_conv(hf_upsampled, freq_offsets)
+                freq_feats = self.freq_att(freq_feats) # [B, dim, H/2, W/2]
+                
+                # 动态门控
+                gate_input = torch.cat([space_feats, freq_feats], dim=1)
+                gate_weights = self.gate_net(gate_input) # [B, 2]
+                
+                # 交叉注意力融合
+                space_flat = rearrange(space_feats, 'B C H W -> B (H W) C')
+                freq_flat = rearrange(freq_feats, 'B C H W -> B (H W) C')
+                fused_feats, _ = self.cross_att(space_flat, freq_flat, freq_flat, key_padding_mask=None)
+                fused_feats = rearrange(fused_feats, 'B (H W) C -> B C H W', H=H//2)
+                
+                # 动态门控加权融合
+                weighted_fused = gate_weights[:,0].view(B,1,1,1) * space_feats + gate_weights[:,1].view(B,1,1,1) * fused_feats
+                batch_results.append(weighted_fused)
             
-            frame_rgb = x[:, start_idx:end_idx].reshape(-1, C, H, W) # [B*K, C, H, W]
-            frame = self.input_conv(frame_rgb)
-            
-            hf = self.wavelet_transform(frame)
-            hf_feats = self.multiscale_fusion(hf)
-            
-            # 生成偏移量（融合原始帧与低频）
-            hf_upsampled = F.interpolate(hf_feats, size=(H,W), mode='bilinear')
-            offset_input = torch.cat([frame, hf_upsampled], dim=1)
-            offsets = self.shared_offset_net(offset_input)
-            
-            space_offsets = offsets[:,:2*3*3*self.deform_groups]
-            freq_offsets = offsets[:,2*3*3*self.deform_groups:]
-            
-            # 空间处理
-            space_feats = self.space_deform_conv(frame, space_offsets)
-            space_feats = self.space_att(space_feats) # [B, dim, H/2, W/2]
-            
-            # 频域处理
-            freq_feats = self.freq_deform_conv(hf_upsampled, freq_offsets)
-            freq_feats = self.freq_att(freq_feats) # [B, dim, H/2, W/2]
-            
-            # 动态门控
-            gate_input = torch.cat([space_feats, freq_feats], dim=1)
-            gate_weights = self.gate_net(gate_input) # [B, 2]
-            
-            # 交叉注意力融合
-            B_batch = B * current_batch_size
-            H_half, W_half = H // 2, W // 2
-            
-            space_feats = space_feats.view(B_batch, self.dim, -1).permute(0, 2, 1) # [B*K, H/2*W/2, dim]
-            freq_feats = freq_feats.view(B_batch, self.dim, -1).permute(0, 2, 1) # [B*K, H/2*W/2, dim]
-            
-            # 交叉注意力
-            fused_flat, _ = self.cross_att(
-                query=space_feats,
-                key=freq_feats,
-                value=freq_feats
-            )
-            
-            fused_feats = fused_flat.permute(0, 2, 1).view(B_batch, self.dim, H_half, W_half)
-            
-            # 动态门控加权融合
-            weighted_fused = gate_weights[:,0].view(B_batch,1,1,1) * space_feats + gate_weights[:,1].view(B_batch,1,1,1) * fused_feats
-            
-            
-            batch_results = weighted_fused.view(B, current_batch_size, self.dim, H_half, W_half) # [B, K, dim, H/2, W/2]
-            all_feats.append(batch_results)
+            all_feats.extend(batch_results)
+
             
         # 连接所有批次的特征
-        features = torch.cat(all_feats, dim=1) # [B, K, dim, H/2, W/2]
-        return features.mean(dim=[1, 3, 4]) # [B, dim]
+                # 时序聚合
+        features = torch.stack(all_feats, dim=1) # [B, K, C, H, W]
+        return features.mean(dim=[1, 3, 4]) # [B, C]

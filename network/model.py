@@ -25,7 +25,7 @@ class DeepfakeDetector(nn.Module):
         self.dama = DAMA(in_channels=in_channels, dim=dama_dim)
         
         # TCM模块 - 分析视频帧序列的时序一致性
-        self.tcm = TCM(dim=dim, dama_dim=dama_dim)
+        self.tcm = TCM(dama_dim=dama_dim)
         
         # 特征融合层
         self.fusion_gate = nn.Sequential(
@@ -57,8 +57,8 @@ class DeepfakeDetector(nn.Module):
         tcm_feats = tcm_outputs['tcm_features'] # [B, T, D]
         
         # 3. 特征融合
-        gate = self.fusion_gate(torch.cat([dama_feats, tcm_feats.unsqueeze(-1)], dim=-1))
-        fused_feats = gate[:, 0].unsqueeze(-1) * dama_feats + gate[:, 1].unsqueeze(-1) * tcm_feats.unsqueeze(-1)
+        gate = self.fusion_gate(torch.cat([dama_feats, tcm_feats], dim=-1))
+        fused_feats = gate[:, 0].unsqueeze(-1) * dama_feats + gate[:, 1].unsqueeze(-1) * tcm_feats
         
         # 4. 分类
         logits = self.classifier(fused_feats)

@@ -4,10 +4,7 @@ import random
 import json
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms # type: ignore
-from tqdm import tqdm
-from typing import List
+from torch.utils.data import Dataset
 
 class FaceForensicsLoader(Dataset):
     """
@@ -48,7 +45,7 @@ class FaceForensicsLoader(Dataset):
         self.split_ids = self._load_split()
         
         # 加载视频位置
-        self.real_videos, self.fake_videos = self._load_video_paths()
+        self.real_videos, self.fake_videos = self._load_video_paths(self.methods)
         
         print(f"{len(self.real_videos)}")
     
@@ -134,9 +131,10 @@ class FaceForensicsLoader(Dataset):
         # 均匀采样帧
         if frame_count < self.frame_count:
             # 如果视频帧数少于指定帧数，则重复最后一帧
-            indices = np.linspace(0, frame_count - 1, self.frame_count, dtype=int)
+            indices = list(range(frame_count))
+            indices.extend([frame_count - 1] * (self.frame_count - frame_count))
         else:
-            indices = np.linspace(0, frame_count - 1, self.frame_count, dtype=int)
+            indices = np.linspace(0, frame_count - 1, self.frame_count, dtype=int).tolist()
             
         frames = []
         for idx in indices:
@@ -195,7 +193,7 @@ class FaceForensicsLoader(Dataset):
         return frames, label
     
 
-class DFDCLoader(Dataset):
+class CelebDFLoader(Dataset):
     """
-    DFDCLoader - 加载视频数据集（DFDC）
+    Celeb DFLoader - 加载视频数据集（CelebDF v2）
     """
