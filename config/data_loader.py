@@ -48,6 +48,10 @@ class FaceForensicsLoader(Dataset):
         self.real_videos, self.fake_videos = self._load_video_paths(self.methods)
         
         print(f"{len(self.real_videos)}")
+        
+    def __len__(self):
+        """返回数据集大小"""
+        return len(self.real_videos) + len(self.fake_videos)
     
     def _load_split(self):
         """加载数据集划分文件"""
