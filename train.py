@@ -205,7 +205,7 @@ def main():
     print(f"Learning rate: {args.lr}")
     print(f"Feature dimension: {args.dim}")
     print(f"Frame count: {args.frame_count}")
-    print(f"Input size: {transforms['train'].transforms[0].size}")
+    print("Input size: (384, 384)")
     print("Model initialized successfully!")
     
     print("="*50)
