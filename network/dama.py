@@ -108,7 +108,7 @@ class DAMA(nn.Module):
     def forward(self, x, batch_size=16):
         # x: [B, K, C, H, W]
         B, K, C, H, W = x.shape
-        all_feats = []
+        mean_features = torch.zeros(B, self.dim, device=x.device)
         
         # 分批处理视频帧
         for start_idx in range(0, K, batch_size):
@@ -118,8 +118,8 @@ class DAMA(nn.Module):
             end_idx = min(start_idx + batch_size, K)
             batch_frames = x[:, start_idx:end_idx] # [B, batch_size, C, H, W]
 
-            batch_results = []
             for i in range(end_idx - start_idx):
+                print(f"Processing frame {i+1}/{end_idx-start_idx}...")
                 frame_rgb = batch_frames[:, i] # [B, C, H, W]
                 frame = self.input_conv(frame_rgb)
                 
@@ -172,15 +172,11 @@ class DAMA(nn.Module):
                 
                 # 动态门控加权融合
                 weighted_fused = gate_weights[:,0].view(B,1,1,1) * space_feats + gate_weights[:,1].view(B,1,1,1) * fused_feats
-                batch_results.append(weighted_fused)
+                mean_features += weighted_fused.mean(dim=[2,3])
                 
                 del space_feats, freq_feats, fused_feats, weighted_fused
                 torch.cuda.empty_cache()
-            
-            all_feats.extend(batch_results)
 
-            
         # 连接所有批次的特征
                 # 时序聚合
-        features = torch.stack(all_feats, dim=1) # [B, K, C, H, W]
-        return features.mean(dim=[1, 3, 4]) # [B, C]
+        return mean_features / K
