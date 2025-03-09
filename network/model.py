@@ -41,14 +41,14 @@ class DeepfakeDetector(nn.Module):
         )
         
         
-    def forward(self, x):
+    def forward(self, x, batch_size):
         """
         前向传播
         """
         B, T, C, H, W = x.shape
         
         # 1. DAMA处理帧序列
-        dama_feats = self.dama(x)
+        dama_feats = self.dama(x, batch_size=batch_size)
         
         # 2. TCM分析时序一致性
         tcm_outputs = self.tcm(x, dama_feats)
