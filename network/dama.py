@@ -140,9 +140,9 @@ class DAMA(nn.Module):
                 torch.cuda.empty_cache()
                 
                 # 空间处理
-                space_feats = self.space_deform_conv(frame_rgb, space_offsets)
+                space_feats = self.space_deform_conv(frame, space_offsets)
                 
-                del space_offsets, frame_rgb
+                del space_offsets, frame
                 torch.cuda.empty_cache()
                 
                 space_feats = self.space_att(space_feats) # [B, dim, H/2, W/2]
