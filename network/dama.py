@@ -135,27 +135,47 @@ class DAMA(nn.Module):
                 space_offsets = offsets[:,:2*3*3*self.deform_groups]
                 freq_offsets = offsets[:,2*3*3*self.deform_groups:]
                 
+                # 删除中间变量，释放显存
+                del hf, offset_input, offsets
+                torch.cuda.empty_cache()
+                
                 # 空间处理
-                space_feats = self.space_deform_conv(frame, space_offsets)
+                space_feats = self.space_deform_conv(frame_rgb, space_offsets)
+                
+                del space_offsets, frame_rgb
+                torch.cuda.empty_cache()
+                
                 space_feats = self.space_att(space_feats) # [B, dim, H/2, W/2]
                 
                 # 频域处理
                 freq_feats = self.freq_deform_conv(hf_upsampled, freq_offsets)
+                
+                del hf_upsampled, freq_offsets
+                torch.cuda.empty_cache()
+                
                 freq_feats = self.freq_att(freq_feats) # [B, dim, H/2, W/2]
                 
                 # 动态门控
                 gate_input = torch.cat([space_feats, freq_feats], dim=1)
                 gate_weights = self.gate_net(gate_input) # [B, 2]
+                del gate_input
                 
                 # 交叉注意力融合
                 space_flat = rearrange(space_feats, 'B C H W -> B (H W) C')
                 freq_flat = rearrange(freq_feats, 'B C H W -> B (H W) C')
                 fused_feats, _ = self.cross_att(space_flat, freq_flat, freq_flat, key_padding_mask=None)
+                
+                del space_flat, freq_flat
+                torch.cuda.empty_cache()
+                
                 fused_feats = rearrange(fused_feats, 'B (H W) C -> B C H W', H=H//2)
                 
                 # 动态门控加权融合
                 weighted_fused = gate_weights[:,0].view(B,1,1,1) * space_feats + gate_weights[:,1].view(B,1,1,1) * fused_feats
                 batch_results.append(weighted_fused)
+                
+                del space_feats, freq_feats, fused_feats, weighted_fused
+                torch.cuda.empty_cache()
             
             all_feats.extend(batch_results)
 

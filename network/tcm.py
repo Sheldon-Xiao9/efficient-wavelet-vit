@@ -84,6 +84,7 @@ class TCM(nn.Module):
                 outputs = self.vit(pixel_values=batch_frames) # [B*T, D]
             batch_feats = outputs.last_hidden_state[:, 0] # [B*T, D]
             all_features.append(batch_feats)
+            torch.cuda.empty_cache()
         vit_features = torch.cat(all_features, dim=0)
         vit_features = vit_features.view(B, T, -1) # [B, T, D]
         
