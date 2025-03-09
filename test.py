@@ -37,7 +37,7 @@ def test_model():
     # 初始化模型
     try:
         print("1. Initializing model...")
-        model = DeepfakeDetector(in_channels=in_channels, dim=dim)
+        model = DeepfakeDetector(in_channels=in_channels, dama_dim=dim, batch_size=batch_size)
         model.to(device)
         print("Model initialized successfully!")
         
@@ -60,7 +60,7 @@ def test_model():
             
             # DAMA模块
             print("3. Testing DAMA module...")
-            dama_feats = model.dama(x)
+            dama_feats = model.dama(x, batch_size=batch_size)
             print(f"DAMA output shape: {dama_feats.shape}")
             print("="*50)
             
@@ -75,7 +75,7 @@ def test_model():
             
             # 测试完整模型
             print("5. Testing complete model...")
-            outputs = model(x)
+            outputs = model(x, batch_size=batch_size)
             print("Model output keys: ")
             for key, value in outputs.items():
                 if isinstance(value, torch.Tensor):

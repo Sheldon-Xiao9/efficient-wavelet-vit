@@ -11,11 +11,12 @@ class DAMA(nn.Module):
     
     DAMA 是一个动态自适应多头注意力模块，用于提取关键帧的空间特征与时频特征。
     """
-    def __init__(self, in_channels=3, dim=128, deform_groups=1, num_heads=4, levels=3):
+    def __init__(self, in_channels=3, dim=128, deform_groups=1, num_heads=4, levels=3, batch_size=16):
         super().__init__()
         self.dim = dim
         self.deform_groups = deform_groups
         self.levels = levels
+        self.batch_size = batch_size
         # 初始化小波变换
         self.dwt = DWTForward(J=1, wave='haar', mode='zero')
         

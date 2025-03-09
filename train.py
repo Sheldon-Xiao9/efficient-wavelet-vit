@@ -65,7 +65,7 @@ def combined_loss(outputs, labels, criterion, alpha=0.7, beta=0.3):
         'cons_loss': consistency_loss.item(),
     }
 
-def train_epoch(model, dataloader, criterion, optimizer, device):
+def train_epoch(model, dataloader, criterion, optimizer, device, batch_size):
     model.train()
     running_loss = 0.0
     running_cls_loss = 0.0
@@ -78,7 +78,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
         optimizer.zero_grad()
         scaler = GradScaler()
         with autocast():
-            outputs = model(frames)
+            outputs = model(frames, batch_size=batch_size)
         
         loss, losses = combined_loss(outputs, labels, criterion)
         
@@ -109,7 +109,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
         'acc': epoch_acc
     }
     
-def val_epoch(model, dataloader, criterion, device):
+def val_epoch(model, dataloader, criterion, device, batch_size):
     model.eval()
     running_loss = 0.0
     running_cls_loss = 0.0
@@ -120,7 +120,7 @@ def val_epoch(model, dataloader, criterion, device):
         for frames, labels in dataloader:
             frames, labels = frames.to(device), labels.to(device)
             
-            outputs = model(frames)
+            outputs = model(frames, batch_size=batch_size)
             loss, losses = combined_loss(outputs, labels, criterion)
             
             running_loss += loss.item() * frames.size(0)
@@ -214,7 +214,8 @@ def main():
     
     model = DeepfakeDetector(
         in_channels=3,
-        dim=args.dim    
+        dama_dim=args.dim,
+        batch_size=args.batch_size
     ).to(device)
     
     if args.multi_gpu and num_gpus > 1:
@@ -244,12 +245,12 @@ def main():
         start_time = time.time()
         
         # 训练
-        train_metrics = train_epoch(model, train_loader, criterion, optimizer, device)
+        train_metrics = train_epoch(model, train_loader, criterion, optimizer, device, args.batch_size)
         scheduler.step()
         
         # 验证
         with torch.no_grad():
-            val_metrics = val_epoch(model, val_loader, criterion, device)
+            val_metrics = val_epoch(model, val_loader, criterion, device, args.batch_size)
         
         # 保存最佳模型
         if val_metrics['auc'] > best_val_auc:

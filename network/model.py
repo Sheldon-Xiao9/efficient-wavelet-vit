@@ -4,14 +4,12 @@ from network.dama import DAMA
 from network.tcm import TCM
 
 class DeepfakeDetector(nn.Module):
-    def __init__(self, in_channels=3, dim=128, dama_dim=128):
+    def __init__(self, in_channels=3, dama_dim=128, batch_size=16):
         """
         结合DAMA和TCM的深度伪造检测器
         
         :param in_channels: 输入视频帧的通道数
         :type in_channels: int
-        :param dim: 基础的特征维度
-        :type dim: int
         :param dama_dim: DAMA的输入特征维度
         :type dama_dim: int
         :param fusion_type: 特征融合方式（'concat'/'add'）
@@ -20,9 +18,10 @@ class DeepfakeDetector(nn.Module):
         super().__init__()
         
         self.dama_dim = dama_dim
+        self.batch_size = batch_size
         
         # DAMA模块 - 提取关键帧的空间特征与时频特征
-        self.dama = DAMA(in_channels=in_channels, dim=dama_dim)
+        self.dama = DAMA(in_channels=in_channels, dim=dama_dim, batch_size=batch_size)
         
         # TCM模块 - 分析视频帧序列的时序一致性
         self.tcm = TCM(dama_dim=dama_dim)
