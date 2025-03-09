@@ -74,7 +74,7 @@ class FaceForensicsLoader(Dataset):
         ``fake_videos``
             包含伪造视频路径、方法和标签的字典列表
         """
-        original_dir = os.path.join(self.root, f'dataset/1/FaceForensics++_{self.compression}/original')
+        original_dir = os.path.join(self.root, f'ff-c23/FaceForensics++_{self.compression}/original')
         if not os.path.exists(original_dir):
             raise FileNotFoundError(f"Original videos directory '{original_dir}' not found")
         

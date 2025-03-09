@@ -21,7 +21,7 @@ def test_model():
     print("="*50)
     
     # 参数设置
-    batch_size = 4
+    batch_size = 8
     frame_count = 30
     in_channels = 3
     dim = 128
