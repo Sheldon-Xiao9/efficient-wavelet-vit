@@ -55,7 +55,7 @@ class FaceForensicsLoader(Dataset):
     
     def _load_split(self):
         """加载数据集划分文件"""
-        split_path = os.path.join(self.root, f'cnn-transformer/data/splits/{self.split}.json')
+        split_path = os.path.join(self.root, f'cnn-transformer/pytorch/default/1/data/splits/{self.split}.json')
         if not os.path.exists(split_path):
             raise FileNotFoundError(f"Split file '{split_path}' not found")
         
