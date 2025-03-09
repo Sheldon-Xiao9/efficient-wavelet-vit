@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.nn import functional as F
+from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_auc_score, accuracy_score # type: ignore
 
@@ -75,12 +76,14 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
         frames, labels = frames.to(device), labels.to(device)
         
         optimizer.zero_grad()
-        outputs = model(frames)
+        scaler = GradScaler()
+        with autocast():
+            outputs = model(frames)
         
         loss, losses = combined_loss(outputs, labels, criterion)
         
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
         
         running_loss += loss.item() * frames.size(0)
         running_cls_loss += losses['cls_loss'] * frames.size(0)
