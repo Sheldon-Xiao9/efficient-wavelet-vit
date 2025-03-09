@@ -35,6 +35,8 @@ def parse_args():
                         help="Number of frames per video")
     parser.add_argument("--visualize", "--v", action="store_true",
                         help="Generate visualizations after training is done")
+    parser.add_argument("--multi-gpu", "--mg", action="store_true",
+                        help="Use multiple GPUs for training")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed")
     return parser.parse_args()
@@ -152,9 +154,19 @@ def main():
     
     print("Start setting...")
     
+    # 检查可用GPU数量
+    num_gpus = torch.cuda.device_count()
+    print(f"Number of GPUs available: {num_gpus}")
+    
     # 设置设备
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
+    
+    if torch.cuda.is_available():
+        for i in range(num_gpus):
+            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+            print(f"Memory Allocated: {torch.cuda.memory_allocated(i) / 1024 ** 3:.2f} GB")
+
     print("="*50)
     
     # 数据加载器
@@ -201,6 +213,9 @@ def main():
         in_channels=3,
         dim=args.dim    
     ).to(device)
+    
+    if args.multi_gpu and num_gpus > 1:
+        model = nn.DataParallel(model)
     
     print("Hyperparameters:")
     print(f"Batch size: {args.batch_size}")
