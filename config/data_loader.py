@@ -95,7 +95,7 @@ class FaceForensicsLoader(Dataset):
         # 收集伪造视频路径
         fake_videos = []
         for method in self.methods:
-            fake_dir = os.path.join(self.root, f'dataset/1/FaceForensics++_{self.compression}/{method}')
+            fake_dir = os.path.join(self.root, f'ff-c23/FaceForensics++_{self.compression}/{method}')
             if not os.path.exists(fake_dir):
                 raise FileNotFoundError(f"Fake videos directory '{fake_dir}' not found")
             
