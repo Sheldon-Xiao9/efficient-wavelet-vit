@@ -1,5 +1,5 @@
 import torch
-import copy
+# import copy
 from torch import nn
 from network.dama import DAMA
 from network.tcm import TCM
@@ -19,6 +19,7 @@ class DeepfakeDetector(nn.Module):
         super().__init__()
         
         self.dama_dim = dama_dim
+        self.in_channels = in_channels
         self.batch_size = batch_size
         
         # DAMA模块 - 提取关键帧的空间特征与时频特征
@@ -73,7 +74,19 @@ class DeepfakeDetector(nn.Module):
             frames_subset = x[:, start_idx:end_idx].to(target_device)
             
             print(f"Processing frames {start_idx} to {end_idx} on GPU {gpu_id}...")
-            dama_result = self._process_dama_on_gpu(frames_subset, batch_size, gpu_id)
+            with torch.cuda.device(target_device):
+                local_dama = type(self.dama)(
+                    in_channels=self.in_channels,
+                    dim=self.dama_dim,
+                    deform_groups=self.dama.deform_groups
+                ).to(target_device)
+                
+                local_dama.load_state_dict(self.dama.state_dict())
+                
+                dama_result = local_dama(frames_subset, batch_size=batch_size)
+                
+                del local_dama
+                torch.cuda.empty_cache()
             all_dama_feats.append(dama_result.to(device))
             start_idx = end_idx
             
@@ -98,20 +111,20 @@ class DeepfakeDetector(nn.Module):
             'tcm_consistency': tcm_consistency
         }
         
-    def _process_dama_on_gpu(self, frame_subset, batch_size, gpu_id):
-        target_device = f"cuda:{gpu_id}"
+    # def _process_dama_on_gpu(self, frame_subset, batch_size, gpu_id):
+    #     target_device = f"cuda:{gpu_id}"
         
-        dama = copy.deepcopy(self.dama).to(target_device)
+    #     dama = copy.deepcopy(self.dama).to(target_device)
         
-        with torch.cuda.device(target_device):
-            dama_feats = dama(frame_subset, batch_size=batch_size)
+    #     with torch.cuda.device(target_device):
+    #         dama_feats = dama(frame_subset, batch_size=batch_size)
             
-        for module in dama.modules():
-            del module
-        del dama
-        torch.cuda.empty_cache()
+    #     for module in dama.modules():
+    #         del module
+    #     del dama
+    #     torch.cuda.empty_cache()
         
-        return dama_feats
+    #     return dama_feats
         
     def _forward_single_gpu(self, x, batch_size):
         """
