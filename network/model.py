@@ -54,46 +54,20 @@ class DeepfakeDetector(nn.Module):
         if num_gpus <= 1:
             return self._forward_single_gpu(x, batch_size)
         
-        frames_per_gpu = T // num_gpus
-        remainder = T % num_gpus
+        dama_feats = torch.zeros(B, self.dama_dim, device=device)
         
-        all_dama_feats = []
-        start_idx = 0
-        
-        for gpu_id in range(num_gpus):
-            current_frames = frames_per_gpu
-            if gpu_id < remainder:
-                current_frames += 1
-            
-            if current_frames <= 0:
-                continue
-            
-            end_idx = start_idx + current_frames
-            
+        for t in range(T):
+            gpu_id = t % num_gpus
             target_device = f"cuda:{gpu_id}"
-            frames_subset = x[:, start_idx:end_idx].to(target_device)
             
-            print(f"Processing frames {start_idx} to {end_idx} on GPU {gpu_id}...")
+            frame = x[:, t].to(target_device)
+            
             with torch.cuda.device(target_device):
-                local_dama = type(self.dama)(
-                    in_channels=self.in_channels,
-                    dim=self.dama_dim,
-                    deform_groups=self.dama.deform_groups
-                ).to(target_device)
-                
-                local_dama.load_state_dict(self.dama.state_dict())
-                
-                dama_result = local_dama(frames_subset, batch_size=batch_size)
-                
-                del local_dama
-                torch.cuda.empty_cache()
-            all_dama_feats.append(dama_result.to(device))
-            start_idx = end_idx
+                frame_processed = self.dama.process_frame(frame)
+                dama_feats += frame_processed.to(device) / T
             
-        # 合并所有GPU的DAMA特征
-        dama_feats = torch.mean(torch.stack(all_dama_feats, dim=0), dim=0)
-        del all_dama_feats
-        torch.cuda.empty_cache()
+            if (t+1) % 5 == 0:
+                torch.cuda.empty_cache()
         
         # TCM分析时序一致性
         tcm_outputs = self.tcm(x, dama_feats)

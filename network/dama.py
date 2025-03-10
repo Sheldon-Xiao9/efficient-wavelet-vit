@@ -107,7 +107,7 @@ class DAMA(nn.Module):
         
         return torch.cat(high_freqs, dim=1)
     
-    def _process_frame(self, frame_rgb):
+    def process_frame(self, frame_rgb):
         B, C, H, W = frame_rgb.shape
         frame = self.input_conv(frame_rgb)
         
@@ -162,7 +162,7 @@ class DAMA(nn.Module):
             for i in range(end_idx - start_idx):
                 frame_rgb = batch_frames[:, i] # [B, C, H, W]
                 
-                frame_feats = checkpoint(self._process_frame, frame_rgb)
+                frame_feats = checkpoint(self.process_frame, frame_rgb)
                 mean_features += frame_feats
                 
                 torch.cuda.empty_cache()
