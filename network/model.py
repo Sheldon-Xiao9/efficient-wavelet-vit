@@ -1,4 +1,5 @@
 import torch
+import copy
 from torch import nn
 from network.dama import DAMA
 from network.tcm import TCM
@@ -46,6 +47,78 @@ class DeepfakeDetector(nn.Module):
         前向传播
         """
         B, T, C, H, W = x.shape
+        device = x.device
+        
+        num_gpus = torch.cuda.device_count()
+        if num_gpus <= 1:
+            return self._forward_single_gpu(x, batch_size)
+        
+        frames_per_gpu = T // num_gpus
+        remainder = T % num_gpus
+        
+        all_dama_feats = []
+        start_idx = 0
+        
+        for gpu_id in range(num_gpus):
+            current_frames = frames_per_gpu
+            if gpu_id < remainder:
+                current_frames += 1
+            
+            if current_frames <= 0:
+                continue
+            
+            end_idx = start_idx + current_frames
+            
+            target_device = f"cuda:{gpu_id}"
+            frames_subset = x[:, start_idx:end_idx].to(target_device)
+            
+            print(f"Processing frames {start_idx} to {end_idx} on GPU {gpu_id}...")
+            dama_result = self._process_dama_on_gpu(frames_subset, batch_size, gpu_id)
+            all_dama_feats.append(dama_result.to(device))
+            start_idx = end_idx
+            
+        # 合并所有GPU的DAMA特征
+        dama_feats = torch.mean(torch.stack(all_dama_feats, dim=0), dim=0)
+        del all_dama_feats
+        torch.cuda.empty_cache()
+        
+        # TCM分析时序一致性
+        tcm_outputs = self.tcm(x, dama_feats)
+        tcm_consistency = tcm_outputs['consistency_score']
+        tcm_feats = tcm_outputs['tcm_features']
+        
+        # 分类
+        gate = self.fusion_gate(torch.cat([dama_feats, tcm_feats], dim=-1))
+        fused_feats = gate[:, 0].unsqueeze(-1) * dama_feats + gate[:, 1].unsqueeze(-1) * tcm_feats
+        logits = self.classifier(fused_feats)
+        
+        return {
+            'logits': logits,
+            'dama_feats': dama_feats,
+            'tcm_consistency': tcm_consistency
+        }
+        
+    def _process_dama_on_gpu(self, frame_subset, batch_size, gpu_id):
+        target_device = f"cuda:{gpu_id}"
+        
+        dama = copy.deepcopy(self.dama).to(target_device)
+        
+        with torch.cuda.device(target_device):
+            dama_feats = dama(frame_subset, batch_size=batch_size)
+            
+        for module in dama.modules():
+            del module
+        del dama
+        torch.cuda.empty_cache()
+        
+        return dama_feats
+        
+    def _forward_single_gpu(self, x, batch_size):
+        """
+        单GPU前向传播
+        """
+        B, T, C, H, W = x.shape
+        device = x.device
         
         # 1. DAMA处理帧序列
         dama_feats = self.dama(x, batch_size=batch_size)
@@ -67,3 +140,4 @@ class DeepfakeDetector(nn.Module):
             'dama_feats': dama_feats,
             'tcm_consistency': tcm_consistency
         }
+        

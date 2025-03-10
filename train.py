@@ -40,6 +40,8 @@ def parse_args():
                         help="Gradient accumulation steps")
     parser.add_argument("--multi-gpu", "--mg", action="store_true",
                         help="Use multiple GPUs for training")
+    parser.add_argument("--parallel", "--p", action="store_true",
+                        help="Start frame-level parallelism")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed")
     return parser.parse_args()
