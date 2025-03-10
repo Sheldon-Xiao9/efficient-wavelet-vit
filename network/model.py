@@ -47,65 +47,6 @@ class DeepfakeDetector(nn.Module):
         """
         前向传播
         """
-        B, T, C, H, W = x.shape
-        device = x.device
-        
-        num_gpus = torch.cuda.device_count()
-        if num_gpus <= 1:
-            return self._forward_single_gpu(x, batch_size)
-        
-        dama_feats = torch.zeros(B, self.dama_dim, device=device)
-        
-        for t in range(T):
-            gpu_id = t % num_gpus
-            target_device = f"cuda:{gpu_id}"
-            
-            frame = x[:, t].to(target_device)
-            
-            with torch.cuda.device(target_device):
-                frame_processed = self.dama.process_frame(frame)
-                dama_feats += frame_processed.to(device) / T
-            
-            if (t+1) % 5 == 0:
-                torch.cuda.empty_cache()
-        
-        # TCM分析时序一致性
-        tcm_outputs = self.tcm(x, dama_feats)
-        tcm_consistency = tcm_outputs['consistency_score']
-        tcm_feats = tcm_outputs['tcm_features']
-        
-        # 分类
-        gate = self.fusion_gate(torch.cat([dama_feats, tcm_feats], dim=-1))
-        fused_feats = gate[:, 0].unsqueeze(-1) * dama_feats + gate[:, 1].unsqueeze(-1) * tcm_feats
-        logits = self.classifier(fused_feats)
-        
-        return {
-            'logits': logits,
-            'dama_feats': dama_feats,
-            'tcm_consistency': tcm_consistency
-        }
-        
-    # def _process_dama_on_gpu(self, frame_subset, batch_size, gpu_id):
-    #     target_device = f"cuda:{gpu_id}"
-        
-    #     dama = copy.deepcopy(self.dama).to(target_device)
-        
-    #     with torch.cuda.device(target_device):
-    #         dama_feats = dama(frame_subset, batch_size=batch_size)
-            
-    #     for module in dama.modules():
-    #         del module
-    #     del dama
-    #     torch.cuda.empty_cache()
-        
-    #     return dama_feats
-        
-    def _forward_single_gpu(self, x, batch_size):
-        """
-        单GPU前向传播
-        """
-        B, T, C, H, W = x.shape
-        device = x.device
         
         # 1. DAMA处理帧序列
         dama_feats = self.dama(x, batch_size=batch_size)
