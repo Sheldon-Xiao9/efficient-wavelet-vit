@@ -41,7 +41,7 @@ class DAMA(nn.Module):
         # 频域分支输入（预输入）
         self.input_conv = nn.Conv2d(in_channels, dim, kernel_size=3, padding=1)
         # 频域可变形卷积
-        self.freq_deform_conv = DeformConv2d(dim, dim, kernel_size=3, padding=1, groups=deform_groups)
+        self.freq_conv = nn.Conv2d(dim, dim, kernel_size=3, padding=1, groups=deform_groups)
         self.freq_att = nn.Sequential(
             nn.BatchNorm2d(dim),
             nn.ReLU(inplace=True),
@@ -120,15 +120,12 @@ class DAMA(nn.Module):
         offset_input = torch.cat([frame, hf_upsampled], dim=1)
         offsets = self.shared_offset_net(offset_input)
         
-        space_offsets = offsets[:,:2*3*3*self.deform_groups]
-        freq_offsets = offsets[:,2*3*3*self.deform_groups:]
-        
         # 空间处理
-        space_feats = self.space_deform_conv(frame, space_offsets)
+        space_feats = self.space_deform_conv(frame, offsets)
         space_feats = self.space_att(space_feats)
         
         # 频域处理
-        freq_feats = self.freq_deform_conv(hf_upsampled, freq_offsets)
+        freq_feats = self.freq_conv(hf_upsampled)
         freq_feats = self.freq_att(freq_feats)
         
         # 动态门控
@@ -162,7 +159,7 @@ class DAMA(nn.Module):
             for i in range(end_idx - start_idx):
                 frame_rgb = batch_frames[:, i] # [B, C, H, W]
                 
-                frame_feats = checkpoint(self._process_frame, frame_rgb)
+                frame_feats = checkpoint(self._process_frame, frame_rgb, use_reentrant=False)
                 mean_features += frame_feats
                 
                 torch.cuda.empty_cache()

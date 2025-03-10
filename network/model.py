@@ -45,7 +45,6 @@ class DeepfakeDetector(nn.Module):
         """
         前向传播
         """
-        B, T, C, H, W = x.shape
         
         # 1. DAMA处理帧序列
         dama_feats = self.dama(x, batch_size=batch_size)
