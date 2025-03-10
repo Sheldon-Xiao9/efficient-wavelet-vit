@@ -177,6 +177,8 @@ class DAMA(nn.Module):
                 
                 del space_feats, freq_feats, fused_feats, weighted_fused
                 torch.cuda.empty_cache()
+                
+                print(f"GPU memory usage: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
 
         # 连接所有批次的特征
                 # 时序聚合
