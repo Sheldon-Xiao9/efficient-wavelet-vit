@@ -38,6 +38,8 @@ def parse_args():
                         help="Generate visualizations after training is done")
     parser.add_argument("--accum-steps", "--as", type=int, default=2,
                         help="Gradient accumulation steps")
+    parser.add_argument("--multi-gpu", "--mg", action="store_true",
+                        help="Use multiple GPUs for training")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed")
     return parser.parse_args()
@@ -226,6 +228,8 @@ def main():
         batch_size=args.batch_size
     ).to(device)
     
+    if args.multi_gpu and num_gpus > 1:
+        model = nn.DataParallel(model)
     
     print("Hyperparameters:")
     print(f"Batch size: {args.batch_size}")
