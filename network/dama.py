@@ -107,7 +107,7 @@ class DAMA(nn.Module):
         
         return torch.cat(high_freqs, dim=1)
     
-    def process_frame(self, frame_rgb):
+    def _process_frame(self, frame_rgb):
         B, C, H, W = frame_rgb.shape
         frame = self.input_conv(frame_rgb)
         
