@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.utils.checkpoint import checkpoint
 from torchvision.ops import DeformConv2d  # type: ignore
 from pytorch_wavelets import DWTForward # type: ignore
 from einops import rearrange
@@ -37,7 +38,7 @@ class DAMA(nn.Module):
             nn.Conv2d(dim, dim, kernel_size=3, padding=1) # [B, dim, H, W]
         )
         
-        # 频域分支输入（小波变换预输入）
+        # 频域分支输入（预输入）
         self.input_conv = nn.Conv2d(in_channels, dim, kernel_size=3, padding=1)
         # 频域可变形卷积
         self.freq_deform_conv = DeformConv2d(dim, dim, kernel_size=3, padding=1, groups=deform_groups)
@@ -105,6 +106,45 @@ class DAMA(nn.Module):
             high_freqs.append(hf3_upsampled)
         
         return torch.cat(high_freqs, dim=1)
+    
+    def _process_frame(self, frame_rgb):
+        B, C, H, W = frame_rgb.shape
+        frame = self.input_conv(frame_rgb)
+        
+        # 获取高频特征
+        hf = self.wavelet_transform(frame)
+        hf = self.multiscale_fusion(hf)
+        
+        # 生成偏移量（融合原始帧与低频）
+        hf_upsampled = F.interpolate(hf, size=(H,W), mode='bilinear')
+        offset_input = torch.cat([frame, hf_upsampled], dim=1)
+        offsets = self.shared_offset_net(offset_input)
+        
+        space_offsets = offsets[:,:2*3*3*self.deform_groups]
+        freq_offsets = offsets[:,2*3*3*self.deform_groups:]
+        
+        # 空间处理
+        space_feats = self.space_deform_conv(frame, space_offsets)
+        space_feats = self.space_att(space_feats)
+        
+        # 频域处理
+        freq_feats = self.freq_deform_conv(hf_upsampled, freq_offsets)
+        freq_feats = self.freq_att(freq_feats)
+        
+        # 动态门控
+        gate_input = torch.cat([space_feats, freq_feats], dim=1)
+        gate_weights = self.gate_net(gate_input)
+        
+        # 交叉注意力融合
+        space_flat = rearrange(space_feats, 'B C H W -> B (H W) C')
+        freq_flat = rearrange(freq_feats, 'B C H W -> B (H W) C')
+        fused_feats, _ = self.cross_att(space_flat, freq_flat, freq_flat, key_padding_mask=None)
+        fused_feats = rearrange(fused_feats, 'B (H W) C -> B C H W', H=H//2)
+        
+        # 动态门控加权融合
+        weighted_fused = gate_weights[:,0].view(B,1,1,1) * space_feats + gate_weights[:,1].view(B,1,1,1) * fused_feats
+        
+        return weighted_fused.mean(dim=[2,3])
         
     def forward(self, x, batch_size=16):
         # x: [B, K, C, H, W]
@@ -122,62 +162,11 @@ class DAMA(nn.Module):
             for i in range(end_idx - start_idx):
                 print(f"Processing frame {i+1}/{end_idx-start_idx}...")
                 frame_rgb = batch_frames[:, i] # [B, C, H, W]
-                frame = self.input_conv(frame_rgb)
                 
-                # 获取高频特征
-                hf = self.wavelet_transform(frame)
-                hf = self.multiscale_fusion(hf) # [B, dim, H/2, W/2]
+                frame_feats = checkpoint(self._process_frame, frame_rgb)
+                mean_features += frame_feats
                 
-                # 生成偏移量（融合原始帧与低频）
-                hf_upsampled = F.interpolate(hf, size=(H,W), mode='bilinear')
-                offset_input = torch.cat([frame, hf_upsampled], dim=1)
-                offsets = self.shared_offset_net(offset_input)
-                
-                space_offsets = offsets[:,:2*3*3*self.deform_groups]
-                freq_offsets = offsets[:,2*3*3*self.deform_groups:]
-                
-                # 删除中间变量，释放显存
-                del hf, offset_input, offsets
                 torch.cuda.empty_cache()
-                
-                # 空间处理
-                space_feats = self.space_deform_conv(frame, space_offsets)
-                
-                del space_offsets, frame
-                torch.cuda.empty_cache()
-                
-                space_feats = self.space_att(space_feats) # [B, dim, H/2, W/2]
-                
-                # 频域处理
-                freq_feats = self.freq_deform_conv(hf_upsampled, freq_offsets)
-                
-                del hf_upsampled, freq_offsets
-                torch.cuda.empty_cache()
-                
-                freq_feats = self.freq_att(freq_feats) # [B, dim, H/2, W/2]
-                
-                # 动态门控
-                gate_input = torch.cat([space_feats, freq_feats], dim=1)
-                gate_weights = self.gate_net(gate_input) # [B, 2]
-                del gate_input
-                
-                # 交叉注意力融合
-                space_flat = rearrange(space_feats, 'B C H W -> B (H W) C')
-                freq_flat = rearrange(freq_feats, 'B C H W -> B (H W) C')
-                fused_feats, _ = self.cross_att(space_flat, freq_flat, freq_flat, key_padding_mask=None)
-                
-                del space_flat, freq_flat
-                torch.cuda.empty_cache()
-                
-                fused_feats = rearrange(fused_feats, 'B (H W) C -> B C H W', H=H//2)
-                
-                # 动态门控加权融合
-                weighted_fused = gate_weights[:,0].view(B,1,1,1) * space_feats + gate_weights[:,1].view(B,1,1,1) * fused_feats
-                mean_features += weighted_fused.mean(dim=[2,3])
-                
-                del space_feats, freq_feats, fused_feats, weighted_fused
-                torch.cuda.empty_cache()
-                
                 print(f"GPU memory usage: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
 
         # 连接所有批次的特征
