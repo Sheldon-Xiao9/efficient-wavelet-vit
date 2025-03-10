@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.nn import functional as F
-from torch.cuda.amp import autocast, GradScaler
+# from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_auc_score, accuracy_score # type: ignore
 
@@ -36,8 +36,8 @@ def parse_args():
                         help="Number of frames per video")
     parser.add_argument("--visualize", "--v", action="store_true",
                         help="Generate visualizations after training is done")
-    parser.add_argument("--multi-gpu", "--mg", action="store_true",
-                        help="Use multiple GPUs for training")
+    parser.add_argument("--accum-steps", "--as", type=int, default=2,
+                        help="Gradient accumulation steps")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed")
     return parser.parse_args()
@@ -65,27 +65,31 @@ def combined_loss(outputs, labels, criterion, alpha=0.7, beta=0.3):
         'cons_loss': consistency_loss.item(),
     }
 
-def train_epoch(model, dataloader, criterion, optimizer, device, batch_size):
+def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, accum_steps=2):
     model.train()
     running_loss = 0.0
     running_cls_loss = 0.0
     running_cons_loss = 0.0
     preds_all, labels_all = [], []
     
-    for frames, labels in dataloader:
+    optimizer.zero_grad()
+    
+    for i, (frames, labels) in enumerate(dataloader):
         frames, labels = frames.to(device), labels.to(device)
         
-        optimizer.zero_grad()
-        scaler = GradScaler()
-        with autocast():
-            outputs = model(frames, batch_size=batch_size)
+        outputs = model(frames, batch_size=batch_size)
         
         loss, losses = combined_loss(outputs, labels, criterion)
         
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
+        # 梯度累积
+        loss = loss / accum_steps
+        loss.backward()
         
-        running_loss += loss.item() * frames.size(0)
+        if (i+1) % accum_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+        
+        running_loss += losses['cls_loss'] * frames.size(0) + losses['cons_loss'] * frames.size(0)
         running_cls_loss += losses['cls_loss'] * frames.size(0)
         running_cons_loss += losses['cons_loss'] * frames.size(0)
         
@@ -93,6 +97,10 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size):
         preds = torch.softmax(outputs['logits'], dim=1)[:, 1].detach().cpu().numpy()
         preds_all.extend(preds)
         labels_all.extend(labels.cpu().numpy())
+        
+    if len(dataloader.dataset) % accum_steps != 0:
+        optimizer.step()
+        optimizer.zero_grad()
         
     # 计算指标
     epoch_loss = running_loss / len(dataloader.dataset)
@@ -218,8 +226,6 @@ def main():
         batch_size=args.batch_size
     ).to(device)
     
-    if args.multi_gpu and num_gpus > 1:
-        model = nn.DataParallel(model)
     
     print("Hyperparameters:")
     print(f"Batch size: {args.batch_size}")
@@ -245,7 +251,7 @@ def main():
         start_time = time.time()
         
         # 训练
-        train_metrics = train_epoch(model, train_loader, criterion, optimizer, device, args.batch_size)
+        train_metrics = train_epoch(model, train_loader, criterion, optimizer, device, args.batch_size, args.accum_steps)
         scheduler.step()
         
         # 验证
