@@ -160,14 +160,12 @@ class DAMA(nn.Module):
             batch_frames = x[:, start_idx:end_idx] # [B, batch_size, C, H, W]
 
             for i in range(end_idx - start_idx):
-                print(f"Processing frame {i+1}/{end_idx-start_idx}...")
                 frame_rgb = batch_frames[:, i] # [B, C, H, W]
                 
                 frame_feats = checkpoint(self._process_frame, frame_rgb)
                 mean_features += frame_feats
                 
                 torch.cuda.empty_cache()
-                print(f"GPU memory usage: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
 
         # 连接所有批次的特征
                 # 时序聚合
