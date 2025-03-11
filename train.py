@@ -7,6 +7,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from tqdm import tqdm
 from torch.nn import functional as F
 # from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
@@ -78,10 +79,8 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     
     optimizer.zero_grad()
     
-    for i, (frames, labels) in enumerate(dataloader):
+    for i, (frames, labels) in enumerate(tqdm(dataloader, desc="Training iteration")):
         frames, labels = frames.to(device), labels.to(device)
-        
-        frames.requires_grad = True
         
         outputs = model(frames, batch_size=batch_size)
         
@@ -96,7 +95,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
             optimizer.zero_grad()
             print(f"Batch {i+1}/{len(dataloader)}: Loss: {loss.item():.4f}")
         
-        running_loss += losses['cls_loss'] * frames.size(0) + losses['cons_loss'] * frames.size(0)
+        running_loss += loss.item() * frames.size(0)
         running_cls_loss += losses['cls_loss'] * frames.size(0)
         running_cons_loss += losses['cons_loss'] * frames.size(0)
         
@@ -252,7 +251,7 @@ def main():
     train_viz = TrainVisualization(os.path.join(args.output, 'train_visualizations'))
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     
     best_val_auc = 0.0
