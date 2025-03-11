@@ -150,7 +150,7 @@ def main():
     parser.add_argument("--split", type=str, default="train", choices=["train", "val", "test"], help="Data split")
     parser.add_argument("--frame_count", type=int, default=30, help="Number of frames to load")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size")
-    parser.add_argument("--compression", type=int, default="C23", choices=["raw", "C23", "C40"], help="Compression method")
+    parser.add_argument("--compression", type=str, default="C23", choices=["raw", "C23", "C40"], help="Compression method")
     parser.add_argument("--method", type=str, default="DeepFake", choices=["DeepFakes", "Face2Face", "FaceSwap", "NeuralTextures"], help="Method to load")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for data loader")
     parser.add_argument("--shuffle", action="store_true", help="Shuffle data")
