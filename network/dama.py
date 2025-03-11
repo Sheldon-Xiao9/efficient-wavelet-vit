@@ -164,7 +164,7 @@ class DAMA(nn.Module):
                 current_mem = torch.cuda.memory_allocated() / 1e9
                 mem_usage_ratio = current_mem / total_mem
                 
-                use_cp = (mem_usage_ratio > 0.85) or (i % 2 == 0)
+                use_cp = (mem_usage_ratio > 0.85) or (i % 3 == 0)
                 
                 if use_cp:
                     frame_feats = checkpoint(self._process_frame, frame_rgb)
@@ -172,7 +172,6 @@ class DAMA(nn.Module):
                     frame_feats = self._process_frame(frame_rgb)
                 
                 mean_features += frame_feats
-                print(f"Frame {start_idx + i + 1}/{K} processed. Memory usage: {current_mem:.2f} GB")
                 torch.cuda.empty_cache()
 
         # 连接所有批次的特征

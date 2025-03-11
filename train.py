@@ -81,6 +81,8 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     for i, (frames, labels) in enumerate(dataloader):
         frames, labels = frames.to(device), labels.to(device)
         
+        frames.requires_grad = True
+        
         outputs = model(frames, batch_size=batch_size)
         
         loss, losses = combined_loss(outputs, labels, criterion)
