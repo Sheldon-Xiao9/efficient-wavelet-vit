@@ -86,7 +86,7 @@ class FaceForensicsLoader(Dataset):
         # 收集原始视频路径
         real_videos = []
         for video_id in video_ids:
-            video_path = os.path.join(original_dir, f'{video_id[1]}.mp4')
+            video_path = os.path.join(original_dir, f'{video_id[0]}.mp4')
             if os.path.exists(video_path):
                 real_videos.append(video_path)
             else:
