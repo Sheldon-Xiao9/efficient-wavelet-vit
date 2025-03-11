@@ -162,8 +162,6 @@ def main():
     
     args = parser.parse_args()
     
-    # 创建输出目录
-    os.makedirs(args.output_dir, exist_ok=True)
     
     # 运行测试
     test_data_loader(args)
