@@ -148,8 +148,6 @@ class DAMA(nn.Module):
         B, K, C, H, W = x.shape
         mean_features = torch.zeros(B, self.dim, device=x.device)
         
-        total_mem = torch.cuda.memory_allocated() / 1e9
-        
         # 分批处理视频帧
         for start_idx in range(0, K, batch_size):
             # 清理缓存
@@ -159,20 +157,9 @@ class DAMA(nn.Module):
             batch_frames = x[:, start_idx:end_idx] # [B, batch_size, C, H, W]
 
             for i in range(end_idx - start_idx):
-                frame_rgb = batch_frames[:, i] # [B, C, H, W]
-                
-                current_mem = torch.cuda.memory_allocated() / 1e9
-                mem_usage_ratio = current_mem / total_mem
-                
-                use_cp = (mem_usage_ratio > 0.85) or (i % 3 == 0)
-                
-                if use_cp:
-                    frame_feats = checkpoint(self._process_frame, frame_rgb)
-                else:
-                    frame_feats = self._process_frame(frame_rgb)
-                
+                frame_feats = checkpoint(self._process_frame, batch_frames[:, i], use_reentrant=False)
                 mean_features += frame_feats
-                torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
         # 连接所有批次的特征
                 # 时序聚合
