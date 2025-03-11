@@ -40,8 +40,7 @@ def test_data_loader(args):
     print("1. Initializing data loader...")
     
     # 设置转换
-    transform = get_transforms(args.method)
-    print(f"Transform: {args.method}")
+    transform = get_transforms()
     
     # 创建数据集
     dataset = FaceForensicsLoader(
