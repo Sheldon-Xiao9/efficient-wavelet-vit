@@ -40,7 +40,7 @@ class DAMA(nn.Module):
         
         # 频域分支输入（预输入）
         self.input_conv = nn.Conv2d(in_channels, dim, kernel_size=3, padding=1)
-        # 频域可变形卷积
+        # 频域卷积
         self.freq_conv = nn.Conv2d(dim, dim, kernel_size=3, padding=1, groups=deform_groups)
         self.freq_att = nn.Sequential(
             nn.BatchNorm2d(dim),
@@ -159,7 +159,7 @@ class DAMA(nn.Module):
             for i in range(end_idx - start_idx):
                 frame_rgb = batch_frames[:, i] # [B, C, H, W]
                 
-                frame_feats = checkpoint(self._process_frame, frame_rgb, use_reentrant=False)
+                frame_feats = self._process_frame(frame_rgb)
                 mean_features += frame_feats
                 
                 torch.cuda.empty_cache()

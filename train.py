@@ -53,8 +53,8 @@ def combined_loss(outputs, labels, criterion, alpha=0.7, beta=0.3):
     classification_loss = criterion(outputs['logits'], labels)
     
     consistency = outputs['tcm_consistency']
-    if consistency.max() > 1: # 归一化
-        consistency = consistency / (consistency.max() + 1e-8)
+    
+    consistency = torch.sigmoid(consistency)
     
     # 根据标签设置目标一致性值
     # 真实视频(lable=0)的一致性得分应该接近1
