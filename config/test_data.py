@@ -47,7 +47,7 @@ def test_data_loader(args):
         root=args.root,
         split=args.split,
         frame_count=args.frame_count,
-        transform=transform,
+        transform=transform[args.split],
         compression=args.compression,
         methods=[args.method]
     )
@@ -151,7 +151,7 @@ def main():
     parser.add_argument("--frame_count", type=int, default=30, help="Number of frames to load")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size")
     parser.add_argument("--compression", type=str, default="C23", choices=["raw", "C23", "C40"], help="Compression method")
-    parser.add_argument("--method", type=str, default="DeepFake", choices=["DeepFakes", "Face2Face", "FaceSwap", "NeuralTextures"], help="Method to load")
+    parser.add_argument("--method", type=str, default="DeepFake", choices=["Deepfakes", "Face2Face", "FaceSwap", "NeuralTextures"], help="Method to load")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of workers for data loader")
     parser.add_argument("--shuffle", action="store_true", help="Shuffle data")
     parser.add_argument("--visualize", action="store_true", help="Visualize data")
