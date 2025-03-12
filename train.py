@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 from torch.nn import functional as F
-from torch.cuda.amp import autocast, GradScaler
+# from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_auc_score, accuracy_score # type: ignore
 
@@ -76,21 +76,20 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     running_cls_loss = 0.0
     running_cons_loss = 0.0
     preds_all, labels_all = [], []
-    scaler = GradScaler()
     
     optimizer.zero_grad()
     
     for i, (frames, labels) in enumerate(tqdm(dataloader, desc="Training iteration")):
         frames, labels = frames.to(device), labels.to(device)
         
-        with autocast():
-            outputs = model(frames, batch_size=batch_size)
         
-            loss, losses = combined_loss(outputs, labels, criterion)
+        outputs = model(frames, batch_size=batch_size)
+        
+        loss, losses = combined_loss(outputs, labels, criterion)
         
         # 梯度累积
         loss = loss / accum_steps
-        scaler.scale(loss).backward()
+        loss.backward()
         
         if (i+1) % accum_steps == 0:
             optimizer.step()
