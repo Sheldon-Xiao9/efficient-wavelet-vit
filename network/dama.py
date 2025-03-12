@@ -178,7 +178,7 @@ class DAMA(nn.Module):
             # 批处理帧
             for i in range(batch_frames.shape[1]):
                 mean_features += checkpoint(self._process_frame, batch_frames[:, i])
-                torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
         # 连接所有批次的特征
                 # 时序聚合
