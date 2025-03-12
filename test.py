@@ -25,7 +25,7 @@ def test_model():
     frame_count = 30
     in_channels = 3
     dim = 128
-    input_size = (384, 384)
+    input_size = (224, 224)
     
     print(f"Batch size: {batch_size}")
     print(f"Frame count: {frame_count}")

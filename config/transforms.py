@@ -93,7 +93,7 @@ def get_transforms():
         transforms.ToPILImage(),
         FaceAlignTransform(margin=20),
         transforms.Resize(450),
-        transforms.CenterCrop(384),
+        transforms.CenterCrop(224),
         transforms.RandomHorizontalFlip(),
         transforms.ColorJitter(brightness=0.05, contrast=0.05),
         transforms.ToTensor(),

@@ -10,7 +10,7 @@ class TCM(nn.Module):
     TCM是一个基于ViT和Transformer的时序一致性分析模块，通过分析视频帧序列的时序特征
     并结合DAMA提取的全局特征，检测深度伪造视频中的时序不一致性。
     """
-    def __init__(self, dama_dim=128, vit_model='google/vit-base-patch16-384', freeze_vit=True):
+    def __init__(self, dama_dim=128, vit_model='google/vit-base-patch16-224', freeze_vit=True):
         super().__init__()
         self.freeze_vit = freeze_vit
         

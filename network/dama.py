@@ -138,8 +138,7 @@ class DAMA(nn.Module):
         hf_upsampled = F.interpolate(hf, size=(H,W), mode='bilinear') # [B, dim, H, W]
         
         # 空间处理
-        with torch.no_grad():
-            space_feats = self.space_efficient(frame)
+        space_feats = self.space_efficient(frame)
         space_feats = self.space_conv(space_feats)
         space_feats = self.space_pool(space_feats)
         
@@ -177,7 +176,8 @@ class DAMA(nn.Module):
 
             # 批处理帧
             for i in range(batch_frames.shape[1]):
-                mean_features += checkpoint(self._process_frame, batch_frames[:, i])
+                frame_tensor = batch_frames[:, i].detach().requires_grad_(True)
+                mean_features += checkpoint(self._process_frame, frame_tensor, use_reentrant=False)
             torch.cuda.empty_cache()
 
         # 连接所有批次的特征
