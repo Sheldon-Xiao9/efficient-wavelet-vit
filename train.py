@@ -68,8 +68,6 @@ def combined_loss(outputs, labels, criterion, epoch=None, total_epochs=None):
     return combined, {
         'cls_loss': classification_loss.item(),
         'cons_loss': consistency_loss.item(),
-        'cls_weight': cls_weight.item(),
-        'cons_weight': cons_weight.item
     }
 
 def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, accum_steps=2, epoch=None, total_epochs=None):
