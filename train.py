@@ -47,7 +47,7 @@ def parse_args():
                         help="Random seed")
     return parser.parse_args()
 
-def combined_loss(outputs, labels, criterion, epoch=None, total_epochs=None):
+def combined_loss(outputs, labels, criterion):
     """
     组合损失函数，由交叉熵损失和时序一致性得分构成
     """
@@ -58,13 +58,20 @@ def combined_loss(outputs, labels, criterion, epoch=None, total_epochs=None):
     # 伪造视频(label=1)的一致性得分应该接近0
     consistency = torch.sigmoid(outputs['tcm_consistency'])
     target_consistency = 1.0 - labels.float()
+    if consistency.dim() > 1 and consistency.size(1) == 1:
+        consistency = consistency.squeeze(1)  # 从[B,1]变为[B]
     consistency_loss = F.mse_loss(consistency, target_consistency)
     
     cls_weight = torch.exp(-consistency).detach()
     cons_weight = torch.exp(-classification_loss).detach()
     
+    # 归一化
+    cls_weight = cls_weight / (cls_weight + cons_weight)
+    cons_weight = 1 - cls_weight
+    
     # 加权组合
-    combined = cls_weight * classification_loss + cons_weight * consistency_loss
+    weighted_loss = cls_weight * classification_loss + cons_weight * consistency_loss
+    combined = weighted_loss.mean()
     return combined, {
         'cls_loss': classification_loss.item(),
         'cons_loss': consistency_loss.item(),
@@ -85,7 +92,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
         
         outputs = model(frames, batch_size=batch_size)
         
-        loss, losses = combined_loss(outputs, labels, criterion, epoch=epoch, total_epochs=total_epochs)
+        loss, losses = combined_loss(outputs, labels, criterion)
         
         # 梯度累积
         loss = loss / accum_steps
@@ -124,7 +131,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
         'acc': epoch_acc
     }
     
-def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, total_epochs=None):
+def val_epoch(model, dataloader, criterion, device, batch_size):
     model.eval()
     running_loss = 0.0
     running_cls_loss = 0.0
@@ -136,7 +143,7 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, tota
             frames, labels = frames.to(device), labels.to(device)
             
             outputs = model(frames, batch_size=batch_size)
-            loss, losses = combined_loss(outputs, labels, criterion, epoch=epoch, total_epochs=total_epochs)
+            loss, losses = combined_loss(outputs, labels, criterion)
             
             running_loss += loss.item() * frames.size(0)
             running_cls_loss += losses['cls_loss'] * frames.size(0)
@@ -266,12 +273,12 @@ def main():
             print("Unfreezing EfficientNet parameters...")
         
         # 训练
-        train_metrics = train_epoch(model, train_loader, criterion, optimizer, device, args.batch_size, args.accum_steps, epoch, args.epochs)
+        train_metrics = train_epoch(model, train_loader, criterion, optimizer, device, args.batch_size, args.accum_steps)
         scheduler.step()
         
         # 验证
         with torch.no_grad():
-            val_metrics = val_epoch(model, val_loader, criterion, device, args.batch_size, epoch, args.epochs)
+            val_metrics = val_epoch(model, val_loader, criterion, device)
         
         # 保存最佳模型
         if val_metrics['auc'] > best_val_auc:
