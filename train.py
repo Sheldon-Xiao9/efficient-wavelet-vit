@@ -93,7 +93,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
         if (i+1) % accum_steps == 0:
             optimizer.step()
             optimizer.zero_grad()
-            print(f"Batch {i+1}/{len(dataloader)}: Loss: {loss.item():.4f}")
+            print(f"Batch {i+1}/{len(dataloader)}: Losses: {losses}")
         
         running_loss += loss.item() * frames.size(0)
         running_cls_loss += losses['cls_loss'] * frames.size(0)
