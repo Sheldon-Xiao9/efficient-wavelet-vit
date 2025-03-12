@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.checkpoint import checkpoint
-from torchvision.ops import DeformConv2d  # type: ignore
+from torchvision.models import efficientnet_v2_s, EfficientNet_V2_S_Weights # type: ignore
 from pytorch_wavelets import DWTForward # type: ignore
 from einops import rearrange
 
@@ -12,45 +12,65 @@ class DAMA(nn.Module):
     
     DAMA 是一个动态自适应多头注意力模块，用于提取关键帧的空间特征与时频特征。
     """
-    def __init__(self, in_channels=3, dim=128, deform_groups=1, num_heads=4, levels=3, batch_size=16):
+    def __init__(self, in_channels=3, dim=128, num_heads=4, levels=3, batch_size=16):
         super().__init__()
         self.dim = dim
-        self.deform_groups = deform_groups
         self.levels = levels
         self.batch_size = batch_size
         # 初始化小波变换
         self.dwt = DWTForward(J=1, wave='haar', mode='zero')
         
-        # 统一偏移网络(输入=原始帧+上采样后的低频特征)
-        self.shared_offset_net = nn.Sequential(
-            nn.Conv2d(2 * dim, 64, kernel_size=3, padding=1),  
-            nn.ReLU(),
-            nn.Conv2d(64, 2*2*3*3*deform_groups, kernel_size=3, padding=1)
-        )
+        # 加载预训练EfficientNetV2-S
+        weights = EfficientNet_V2_S_Weights.IMAGENET1K_V1
+        self.efficient_backbone = efficientnet_v2_s(weights=weights)
         
-        # 空间分支输入
-        # 可变形卷积
-        self.space_deform_conv = DeformConv2d(dim, dim, kernel_size=3, padding=1, groups=deform_groups)
-        self.space_att = nn.Sequential(
-            nn.BatchNorm2d(dim),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(dim, dim, kernel_size=3, padding=1) # [B, dim, H, W]
-        )
+        # 移除分类器
+        self.efficient_backbone.classifier = nn.Identity()
         
-        # 频域分支输入（预输入）
+        # 只使用前5个特征提取模块
+        self.space_efficient = self.efficient_backbone.features[:5]
+        DIM_FRONT_5 = 128
+        
+        # 冻结
+        for param in self.space_efficient.parameters():
+            param.requires_grad = False
+        
+        # 频域输入卷积
         self.input_conv = nn.Conv2d(in_channels, dim, kernel_size=3, padding=1)
-        # 频域卷积
-        self.freq_conv = nn.Conv2d(dim, dim, kernel_size=3, padding=1, groups=deform_groups)
-        self.freq_att = nn.Sequential(
+        
+        # 空间卷积
+        self.space_conv = nn.Conv2d(DIM_FRONT_5, dim, kernel_size=3, padding=1)
+        self.space_pool = nn.Sequential(
             nn.BatchNorm2d(dim),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(dim, dim, kernel_size=3, padding=1) # [B, dim, H, W]
+        )
+        
+        # 频域卷积
+        self.freq_conv = nn.Sequential(
+            nn.Conv2d(dim, dim, kernel_size=3, padding=1, stride=2),
+            nn.BatchNorm2d(dim),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(dim, dim, kernel_size=3, padding=1, stride=2),
+            nn.BatchNorm2d(dim),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(dim, dim, kernel_size=3, padding=1, stride=2),
+            nn.BatchNorm2d(dim),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(dim, dim, kernel_size=3, padding=1, stride=2),
+            nn.BatchNorm2d(dim),
+            nn.ReLU(inplace=True)
+        )
+        self.freq_pool = nn.Sequential(
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(dim, dim, kernel_size=3, padding=1),
+            nn.BatchNorm2d(dim),
+            nn.ReLU(inplace=True)
         )
         # 高频通道压缩器（处理LH, HL, HH三个高频分量）
         self.hf_conv = nn.Sequential(
-            nn.Conv2d(3*dim, dim, kernel_size=3, padding=1),
+            nn.Conv2d(3*in_channels, dim, kernel_size=3, padding=1),
             nn.BatchNorm2d(dim),
             nn.ReLU(inplace=True)
         )
@@ -107,26 +127,25 @@ class DAMA(nn.Module):
         
         return torch.cat(high_freqs, dim=1)
     
-    def _process_frame(self, frame_rgb):
-        B, C, H, W = frame_rgb.shape
-        frame = self.input_conv(frame_rgb)
+    def _process_frame(self, frame):
+        B, C, H, W = frame.shape
         
         # 获取高频特征
         hf = self.wavelet_transform(frame)
         hf = self.multiscale_fusion(hf)
         
         # 生成偏移量（融合原始帧与低频）
-        hf_upsampled = F.interpolate(hf, size=(H,W), mode='bilinear')
-        offset_input = torch.cat([frame, hf_upsampled], dim=1)
-        offsets = self.shared_offset_net(offset_input)
+        hf_upsampled = F.interpolate(hf, size=(H,W), mode='bilinear') # [B, dim, H, W]
         
         # 空间处理
-        space_feats = self.space_deform_conv(frame, offsets)
-        space_feats = self.space_att(space_feats)
+        with torch.no_grad():
+            space_feats = self.space_efficient(frame)
+        space_feats = self.space_conv(space_feats)
+        space_feats = self.space_pool(space_feats)
         
         # 频域处理
         freq_feats = self.freq_conv(hf_upsampled)
-        freq_feats = self.freq_att(freq_feats)
+        freq_feats = self.freq_pool(freq_feats)
         
         # 动态门控
         gate_input = torch.cat([space_feats, freq_feats], dim=1)
@@ -136,7 +155,7 @@ class DAMA(nn.Module):
         space_flat = rearrange(space_feats, 'B C H W -> B (H W) C')
         freq_flat = rearrange(freq_feats, 'B C H W -> B (H W) C')
         fused_feats, _ = self.cross_att(space_flat, freq_flat, freq_flat, key_padding_mask=None)
-        fused_feats = rearrange(fused_feats, 'B (H W) C -> B C H W', H=H//2)
+        fused_feats = rearrange(fused_feats, 'B (H W) C -> B C H W', H=H//32)
         
         # 动态门控加权融合
         weighted_fused = gate_weights[:,0].view(B,1,1,1) * space_feats + gate_weights[:,1].view(B,1,1,1) * fused_feats
@@ -156,9 +175,9 @@ class DAMA(nn.Module):
             end_idx = min(start_idx + batch_size, K)
             batch_frames = x[:, start_idx:end_idx] # [B, batch_size, C, H, W]
 
-            for i in range(end_idx - start_idx):
-                frame_feats = checkpoint(self._process_frame, batch_frames[:, i], use_reentrant=False)
-                mean_features += frame_feats
+            # 批处理帧
+            for i in range(batch_frames.shape[1]):
+                mean_features += self._process_frame(batch_frames[:, i])
             torch.cuda.empty_cache()
 
         # 连接所有批次的特征

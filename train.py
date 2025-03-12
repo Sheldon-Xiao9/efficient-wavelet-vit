@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 from torch.nn import functional as F
-# from torch.cuda.amp import autocast, GradScaler
+from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_auc_score, accuracy_score # type: ignore
 
@@ -76,19 +76,21 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     running_cls_loss = 0.0
     running_cons_loss = 0.0
     preds_all, labels_all = [], []
+    scaler = GradScaler()
     
     optimizer.zero_grad()
     
     for i, (frames, labels) in enumerate(tqdm(dataloader, desc="Training iteration")):
         frames, labels = frames.to(device), labels.to(device)
         
-        outputs = model(frames, batch_size=batch_size)
+        with autocast():
+            outputs = model(frames, batch_size=batch_size)
         
-        loss, losses = combined_loss(outputs, labels, criterion)
+            loss, losses = combined_loss(outputs, labels, criterion)
         
         # 梯度累积
         loss = loss / accum_steps
-        loss.backward()
+        scaler.scale(loss).backward()
         
         if (i+1) % accum_steps == 0:
             optimizer.step()
@@ -252,11 +254,17 @@ def main():
     
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
     
     best_val_auc = 0.0
     for epoch in range(args.epochs):
         start_time = time.time()
+        
+        # 如果训练已超过 70% 的 Epochs，则解冻 EfficientNet 参数
+        if epoch >= 0.7 * args.epochs:
+            for param in model.dama.space_efficient[-1].parameters():
+                param.requires_grad = True
+            print("Unfreezing EfficientNet parameters...")
         
         # 训练
         train_metrics = train_epoch(model, train_loader, criterion, optimizer, device, args.batch_size, args.accum_steps)
