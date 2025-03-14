@@ -77,7 +77,7 @@ def combined_loss(outputs, labels, criterion):
         'cons_loss': consistency_loss.item(),
     }
 
-def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, accum_steps=2, epoch=None, total_epochs=None):
+def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, accum_steps=2):
     model.train()
     running_loss = 0.0
     running_cls_loss = 0.0
@@ -278,7 +278,7 @@ def main():
         
         # 验证
         with torch.no_grad():
-            val_metrics = val_epoch(model, val_loader, criterion, device)
+            val_metrics = val_epoch(model, val_loader, criterion, device, args.batch_size)
         
         # 保存最佳模型
         if val_metrics['auc'] > best_val_auc:

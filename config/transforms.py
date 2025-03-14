@@ -6,7 +6,6 @@ from torchvision import transforms # type: ignore
 from PIL import Image # type: ignore
 from typing import List
 from facenet_pytorch import MTCNN # type: ignore
-from config.data_loader import FaceForensicsLoader
 
 seed = 42
 random.seed(seed)

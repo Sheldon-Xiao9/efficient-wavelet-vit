@@ -1,5 +1,6 @@
 import os
 import cv2
+import glob
 import random
 import json
 import numpy as np
@@ -47,7 +48,7 @@ class FaceForensicsLoader(Dataset):
         # 加载视频位置
         self.real_videos, self.fake_videos = self._load_video_paths(self.methods)
         
-        print(f"{len(self.real_videos)}")
+        print(f"Loaded {len(self.real_videos)} real videos and {len(self.fake_videos)} fake videos")
         
     def __len__(self):
         """返回数据集大小"""
@@ -62,21 +63,21 @@ class FaceForensicsLoader(Dataset):
         with open(split_path, 'r') as f:
             return json.load(f)
         
-    def _load_video_paths(self, method):
+    def _load_image_paths(self, method):
         """
-        加载视频位置
+        加载预载帧位置
         
-        :return: 返回真实视频和伪造视频的路径``(real_videos, fake_videos)``
+        :return: 返回真实视频和伪造视频预载帧的路径``(real_videos, fake_videos)``
         :rtype: tuple
         
         ``real_videos``
-            包含真实视频路径的列表
+            包含真实视频帧路径的列表
         ``fake_videos``
-            包含伪造视频路径、方法和标签的字典列表
+            包含伪造视频帧路径、方法和标签的字典列表
         """
-        original_dir = os.path.join(self.root, f'ff-c23/FaceForensics++_{self.compression}/original')
+        original_dir = os.path.join(self.root, f'ff-c23/FaceForensics++_{self.compression}/original/images')
         if not os.path.exists(original_dir):
-            raise FileNotFoundError(f"Original videos directory '{original_dir}' not found")
+            raise FileNotFoundError(f"Original video frames directory '{original_dir}' not found")
         
         # 获取当前分割的视频ID
         video_ids = []
@@ -84,16 +85,16 @@ class FaceForensicsLoader(Dataset):
             video_ids.append(pair)
             
         # 收集原始视频路径
-        real_videos = []
+        real_dirs = []
         for video_id in video_ids:
             video_path = os.path.join(original_dir, f'{video_id[0]}.mp4')
             if os.path.exists(video_path):
-                real_videos.append(video_path)
+                real_dirs.append(video_path)
             else:
                 raise Exception(f"Original video '{video_path}' not found")
         
         # 收集伪造视频路径
-        fake_videos = []
+        fake_dirs = []
         for method in self.methods:
             fake_dir = os.path.join(self.root, f'ff-c23/FaceForensics++_{self.compression}/{method}')
             if not os.path.exists(fake_dir):
@@ -104,7 +105,7 @@ class FaceForensicsLoader(Dataset):
                 target, source = video_id
                 video_path = os.path.join(fake_dir, f'{target}_{source}.mp4')
                 if os.path.exists(video_path):
-                    fake_videos.append({
+                    fake_dirs.append({
                         'path': video_path,
                         'method': method,
                         'target': target,
@@ -113,51 +114,7 @@ class FaceForensicsLoader(Dataset):
                 else:
                     raise Exception(f"Fake video '{video_path}' not found")
         
-        return real_videos, fake_videos
-    
-    def _sample_frames(self, video_path: str):
-        """
-        从视频中采样帧
-        
-        :param video_path: 视频路径
-        :type video_path: str
-        :return: 返回帧列表
-        :rtype: list
-        """
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            raise IOError(f"Video '{video_path}' cannot be opened")
-        
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if frame_count <= 0:
-            raise ValueError(f"Video '{video_path}' has no frames")
-        
-        # 均匀采样帧
-        if frame_count < self.frame_count:
-            # 如果视频帧数少于指定帧数，则重复最后一帧
-            indices = list(range(frame_count))
-            indices.extend([frame_count - 1] * (self.frame_count - frame_count))
-        else:
-            indices = np.linspace(0, frame_count - 1, self.frame_count, dtype=int).tolist()
-            
-        frames = []
-        for idx in indices:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-            ret, frame = cap.read()
-            if ret:
-                # 转 RGB
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frames.append(frame)
-            else:
-                # 读取失败时复制上一帧或创建空白帧
-                if frames:
-                    frames.append(frames[-1])
-                else:
-                    blank = np.zeros((256, 256, 3), dtype=np.uint8)
-                    frames.append(blank)
-        
-        cap.release()
-        return frames
+        return real_dirs, fake_dirs
     
     def __getitem__(self, index):
         """
@@ -175,21 +132,37 @@ class FaceForensicsLoader(Dataset):
         """
         if index < len(self.real_videos):
             # 真实视频
-            video_path = self.real_videos[index]
+            frames_dir = self.real_videos[index]
             label = 0
         else:
             # 伪造视频
             fake_index = index - len(self.real_videos)
             if fake_index >= len(self.fake_videos):
                 raise IndexError(f"Index '{index}' out of range")
-            video_path = self.fake_videos[fake_index]['path']
+            frames_dir = self.fake_videos[fake_index]['path']
             label = 1
         
-        # 采样帧
-        frames = self._sample_frames(video_path)
+        # 获取帧文件列表
+        frame_files = sorted(glob.glob(os.path.join(frames_dir, '*.png')))
+        if not frame_files:
+            frame_files = sorted(glob.glob(os.path.join(frames_dir, '*.jpg')))
+        if not frame_files:
+            raise ValueError(f"No frame images found in '{frames_dir}'")
         
-        if self.transform:
-            frames = [self.transform(frame) for frame in frames]
+        # 如果帧数超过需要的数量，选择均匀间隔的帧
+        if len(frame_files) > self.frame_count:
+            # 均匀选择frame_count个帧
+            indices = np.linspace(0, len(frame_files) - 1, self.frame_count, dtype=int).tolist()
+            selected_files = [frame_files[i] for i in indices]
+        else:
+            # 帧数不足，全部使用并可能重复最后一帧
+            selected_files = frame_files
+            # 如果帧数不足，重复最后一帧
+            while len(selected_files) < self.frame_count:
+                selected_files.append(frame_files[-1])
+            
+            if self.transform:
+                frames = [self.transform(frame) for frame in frames]
             
         # 转换为张量 (T x C x H x W)
         frames = torch.stack([frame for frame in frames if isinstance(frame, torch.Tensor)])
