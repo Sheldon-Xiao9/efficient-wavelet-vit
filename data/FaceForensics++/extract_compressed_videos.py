@@ -24,7 +24,7 @@ DATASET_PATHS = {
 COMPRESSION = ['c0', 'c23', 'c40']
 
 
-def extract_frames(data_path, output_path, method='ffmpeg'):
+def extract_frames(data_path, output_path, method='cv2'):
     """Method to extract frames, either with ffmpeg or opencv. FFmpeg won't
     start from 0 so we would have to rename if we want to keep the filenames
     coherent."""
