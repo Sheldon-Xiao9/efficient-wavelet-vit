@@ -24,7 +24,7 @@ DATASET_PATHS = {
 COMPRESSION = ['c0', 'c23', 'c40']
 
 
-def extract_frames(data_path, output_path, method='cv2'):
+def extract_frames(data_path, output_path, method='cv2', n_frames=32):
     """Method to extract frames, either with ffmpeg or opencv. FFmpeg won't
     start from 0 so we would have to rename if we want to keep the filenames
     coherent."""
@@ -36,14 +36,17 @@ def extract_frames(data_path, output_path, method='cv2'):
             shell=True, stderr=subprocess.STDOUT)
     elif method == 'cv2':
         reader = cv2.VideoCapture(data_path)
-        frame_num = 0
-        while reader.isOpened():
+        total_frames = int(reader.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames < n_frames:
+            indices = list(range(total_frames))
+        else:
+            indices = list(range(0, total_frames-1, n_frames, dtype=int)).tolist()
+        for idx, frame_idx in enumerate(indices):
+            reader.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             success, image = reader.read()
             if not success:
                 break
-            cv2.imwrite(join(output_path, '{:04d}.png'.format(frame_num)),
-                        image)
-            frame_num += 1
+            cv2.imwrite(join(output_path, '{:04d}.png'.format(idx)), image)
         reader.release()
     else:
         raise Exception('Wrong extract frames method: {}'.format(method))
