@@ -68,8 +68,6 @@ if __name__ == '__main__':
     p.add_argument('--dataset', '-d', type=str,
                    choices=list(DATASET_PATHS.keys()) + ['all'],
                    default='all')
-    p.add_argument('--compression', '-c', type=str, choices=COMPRESSION,
-                   default='c0')
     p.add_argument('--output_path', type=str, default='data/frames/ff++')
     args = p.parse_args()
 
