@@ -52,7 +52,7 @@ def extract_frames(data_path, output_path, method='cv2'):
 def extract_method_videos(data_path, dataset, compression):
     """Extracts all videos of a specified method and compression in the
     FaceForensics++ file structure"""
-    videos_path = join(data_path, DATASET_PATHS[dataset], 'videos')
+    videos_path = join(data_path, DATASET_PATHS[dataset])
     images_path = join(data_path, DATASET_PATHS[dataset], 'images')
     for video in tqdm(os.listdir(videos_path)):
         image_folder = video.split('.')[0]
