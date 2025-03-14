@@ -7,6 +7,7 @@ Author: Andreas Roessler
 Date: 25.01.2019
 """
 import os
+import numpy as np
 from os.path import join
 import argparse
 import subprocess
@@ -40,7 +41,7 @@ def extract_frames(data_path, output_path, method='cv2', n_frames=32):
         if total_frames < n_frames:
             indices = list(range(total_frames))
         else:
-            indices = list(range(0, total_frames-1, n_frames, dtype=int)).tolist()
+            indices = np.linspace(0, total_frames - 1, n_frames, dtype=int).tolist()
         for idx, frame_idx in enumerate(indices):
             reader.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             success, image = reader.read()
