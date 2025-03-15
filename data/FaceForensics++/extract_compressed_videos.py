@@ -25,7 +25,7 @@ DATASET_PATHS = {
 COMPRESSION = ['c0', 'c23', 'c40']
 
 
-def extract_frames(data_path, output_path, method='cv2', n_frames=32):
+def extract_frames(data_path, output_path, method='cv2', n_frames=25):
     """Method to extract frames, either with ffmpeg or opencv. FFmpeg won't
     start from 0 so we would have to rename if we want to keep the filenames
     coherent."""
@@ -48,6 +48,7 @@ def extract_frames(data_path, output_path, method='cv2', n_frames=32):
             if not success:
                 break
             cv2.imwrite(join(output_path, '{:04d}.png'.format(idx)), image)
+            del image
         reader.release()
     else:
         raise Exception('Wrong extract frames method: {}'.format(method))
