@@ -76,7 +76,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
         dynamic_weight = 0.3 * min(1.0, (epoch-0.2*max_epochs)/(0.8*max_epochs))
     
     # 正交约束
-    loss_orth = torch.norm(torch.mm(outputs['dama_features'].t(), outputs['tcm_features']))**2
+    loss_orth = torch.norm(torch.mm(outputs['dama_feats'].t(), outputs['tcm_feats']))**2
     
     return cls_loss + dynamic_weight * cons_loss + 0.05 * loss_orth, {
         'cls_loss': cls_loss.item(),
