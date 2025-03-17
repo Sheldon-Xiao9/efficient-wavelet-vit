@@ -51,6 +51,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     组合损失函数，由Focal Loss和对比一致性损失组成
     """
     cls_loss = outputs['logits']
+    labels = F.one_hot(labels, num_classes=2).float()
     cons_scores = outputs['tcm_consistency']
     
     if epoch < 0.2 * max_epochs:
@@ -62,7 +63,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
         
         # 真实样本的索引为 1
         # 伪造样本的索引为 0
-        real_mask = (labels == 1)
+        real_mask = (labels[:, 1] == 1.0)
         fake_mask = ~real_mask
         
         s_real = cons_scores[real_mask]
@@ -94,7 +95,6 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     
     for i, (frames, labels) in enumerate(tqdm(dataloader, desc="Training iteration")):
         frames, labels = frames.to(device), labels.to(device)
-        
         
         outputs = model(frames, batch_size=batch_size)
         
