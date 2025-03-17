@@ -83,7 +83,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
         'orth_loss': loss_orth.item()
     }
 
-def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, accum_steps=2):
+def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, accum_steps=2, epoch=None, max_epochs=None):
     model.train()
     running_loss = 0.0
     running_cls_loss = 0.0
@@ -98,7 +98,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
         
         outputs = model(frames, batch_size=batch_size)
         
-        loss, losses = combined_loss(outputs, labels, criterion)
+        loss, losses = combined_loss(outputs, labels, criterion, epoch, max_epochs)
         
         # 梯度累积
         loss = loss / accum_steps
@@ -137,7 +137,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
         'acc': epoch_acc
     }
     
-def val_epoch(model, dataloader, criterion, device, batch_size):
+def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_epochs=None):
     model.eval()
     running_loss = 0.0
     running_cls_loss = 0.0
@@ -149,7 +149,7 @@ def val_epoch(model, dataloader, criterion, device, batch_size):
             frames, labels = frames.to(device), labels.to(device)
             
             outputs = model(frames, batch_size=batch_size)
-            loss, losses = combined_loss(outputs, labels, criterion)
+            loss, losses = combined_loss(outputs, labels, criterion, epoch, max_epochs)
             
             running_loss += loss.item() * frames.size(0)
             running_cls_loss += losses['cls_loss'] * frames.size(0)
@@ -272,19 +272,21 @@ def main():
     for epoch in range(args.epochs):
         start_time = time.time()
         
-        # 如果训练已超过 70% 的 Epochs，则解冻 EfficientNet 参数
+        # 如果训练已超过 70% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
         if epoch >= 0.7 * args.epochs:
             for param in model.dama.space_efficient[-1].parameters():
+                param.requires_grad = True
+            for param in model.tcm.vit.parameters():
                 param.requires_grad = True
             print("Unfreezing EfficientNet parameters...")
         
         # 训练
-        train_metrics = train_epoch(model, train_loader, criterion, optimizer, device, args.batch_size, args.accum_steps)
+        train_metrics = train_epoch(model, train_loader, criterion, optimizer, device, args.batch_size, args.accum_steps, epoch, args.epochs)
         scheduler.step()
         
         # 验证
         with torch.no_grad():
-            val_metrics = val_epoch(model, val_loader, criterion, device, args.batch_size)
+            val_metrics = val_epoch(model, val_loader, criterion, device, args.batch_size, epoch, args.epochs)
         
         # 保存最佳模型
         if val_metrics['auc'] > best_val_auc:
