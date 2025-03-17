@@ -56,7 +56,7 @@ class FaceForensicsLoader(Dataset):
     
     def _load_split(self):
         """加载数据集划分文件"""
-        split_path = os.path.join(self.root, f'/home/python-projects/cnn-transformer/data/splits/{self.split}.json')
+        split_path = os.path.join(self.root, f'cnn-transformer/pytorch/default/1/data/splits/{self.split}.json')
         if not os.path.exists(split_path):
             raise FileNotFoundError(f"Split file '{split_path}' not found")
         
@@ -75,7 +75,7 @@ class FaceForensicsLoader(Dataset):
         ``fake_videos``
             包含伪造视频帧路径、方法和标签的字典列表
         """
-        original_dir = os.path.join(self.root, f'ff++/frames/original')
+        original_dir = os.path.join(self.root, f'faceforensics-c23-processed/ff++/frames/original')
         if not os.path.exists(original_dir):
             raise FileNotFoundError(f"Original video frames directory '{original_dir}' not found")
         
@@ -96,7 +96,7 @@ class FaceForensicsLoader(Dataset):
         # 收集伪造视频路径
         fake_dirs = []
         for method in self.methods:
-            fake_dir = os.path.join(self.root, f'ff++/frames/{method}')
+            fake_dir = os.path.join(self.root, f'faceforensics-c23-processed/ff++/frames/{method}')
             if not os.path.exists(fake_dir):
                 raise FileNotFoundError(f"Fake videos directory '{fake_dir}' not found")
             
