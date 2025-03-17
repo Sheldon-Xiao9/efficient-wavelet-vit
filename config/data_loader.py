@@ -14,7 +14,7 @@ class FaceForensicsLoader(Dataset):
     def __init__(self,
                  root,
                  split='train',
-                 frame_count=16,
+                 frame_count=24,
                  transform=None,
                  compression='C23',
                  methods=['Deepfakes', 'Face2Face', 'FaceSwap', 'NeuralTextures']):
@@ -46,7 +46,7 @@ class FaceForensicsLoader(Dataset):
         self.split_ids = self._load_split()
         
         # 加载视频位置
-        self.real_videos, self.fake_videos = self._load_video_paths(self.methods)
+        self.real_videos, self.fake_videos = self._load_frames_dirs(self.methods)
         
         print(f"Loaded {len(self.real_videos)} real videos and {len(self.fake_videos)} fake videos")
         
@@ -56,14 +56,14 @@ class FaceForensicsLoader(Dataset):
     
     def _load_split(self):
         """加载数据集划分文件"""
-        split_path = os.path.join(self.root, f'cnn-transformer/pytorch/default/1/data/splits/{self.split}.json')
+        split_path = os.path.join(self.root, f'/home/python-projects/cnn-transformer/data/splits/{self.split}.json')
         if not os.path.exists(split_path):
             raise FileNotFoundError(f"Split file '{split_path}' not found")
         
         with open(split_path, 'r') as f:
             return json.load(f)
         
-    def _load_image_paths(self, method):
+    def _load_frames_dirs(self, method):
         """
         加载预载帧位置
         
@@ -75,7 +75,7 @@ class FaceForensicsLoader(Dataset):
         ``fake_videos``
             包含伪造视频帧路径、方法和标签的字典列表
         """
-        original_dir = os.path.join(self.root, f'ff-c23/FaceForensics++_{self.compression}/original/images')
+        original_dir = os.path.join(self.root, f'ff++/frames/original')
         if not os.path.exists(original_dir):
             raise FileNotFoundError(f"Original video frames directory '{original_dir}' not found")
         
@@ -87,32 +87,32 @@ class FaceForensicsLoader(Dataset):
         # 收集原始视频路径
         real_dirs = []
         for video_id in video_ids:
-            video_path = os.path.join(original_dir, f'{video_id[0]}.mp4')
-            if os.path.exists(video_path):
-                real_dirs.append(video_path)
+            frames_dir = os.path.join(original_dir, f'{video_id[0]}')
+            if os.path.exists(frames_dir):
+                real_dirs.append(frames_dir)
             else:
-                raise Exception(f"Original video '{video_path}' not found")
+                raise Exception(f"Original video '{frames_dir}' not found")
         
         # 收集伪造视频路径
         fake_dirs = []
         for method in self.methods:
-            fake_dir = os.path.join(self.root, f'ff-c23/FaceForensics++_{self.compression}/{method}')
+            fake_dir = os.path.join(self.root, f'ff++/frames/{method}')
             if not os.path.exists(fake_dir):
                 raise FileNotFoundError(f"Fake videos directory '{fake_dir}' not found")
             
             for video_id in video_ids:
-                # 伪造视频命名规则：<target>_<source>.mp4
+                # 伪造视频帧的文件夹命名规则：<target>_<source>
                 target, source = video_id
-                video_path = os.path.join(fake_dir, f'{target}_{source}.mp4')
-                if os.path.exists(video_path):
+                frames_dir = os.path.join(fake_dir, f'{target}_{source}')
+                if os.path.exists(frames_dir):
                     fake_dirs.append({
-                        'path': video_path,
+                        'path': frames_dir,
                         'method': method,
                         'target': target,
                         'source': source
                     })
                 else:
-                    raise Exception(f"Fake video '{video_path}' not found")
+                    raise Exception(f"Fake video '{frames_dir}' not found")
         
         return real_dirs, fake_dirs
     
@@ -161,8 +161,19 @@ class FaceForensicsLoader(Dataset):
             while len(selected_files) < self.frame_count:
                 selected_files.append(frame_files[-1])
             
-            if self.transform:
-                frames = [self.transform(frame) for frame in frames]
+        # 读取帧
+        frames = []
+        for file_path in selected_files:
+            img = cv2.imread(file_path)
+            if img is not None: # 忽略无效帧
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                frames.append(img)
+            else:
+                blank = np.zeros((256, 256, 3), dtype=np.uint8)
+                frames.append(blank)
+        
+        if self.transform:
+            frames = [self.transform(frame) for frame in frames]
             
         # 转换为张量 (T x C x H x W)
         frames = torch.stack([frame for frame in frames if isinstance(frame, torch.Tensor)])

@@ -103,7 +103,7 @@ def get_transforms():
         transforms.ToPILImage(),
         FaceAlignTransform(margin=20),
         transforms.Resize(450),
-        transforms.CenterCrop(384),
+        transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
@@ -112,7 +112,7 @@ def get_transforms():
         transforms.ToPILImage(),
         FaceAlignTransform(margin=20),
         transforms.Resize(450),
-        transforms.CenterCrop(384),
+        transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])

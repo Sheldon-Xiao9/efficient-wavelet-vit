@@ -16,6 +16,7 @@ from sklearn.metrics import roc_auc_score, accuracy_score # type: ignore
 from network.model import DeepfakeDetector
 from config.data_loader import FaceForensicsLoader
 from config.transforms import get_transforms
+from config.focal_loss import BinaryFocalLoss
 from utils.visualization import TrainVisualization
 
 # 参数解析器
@@ -41,40 +42,45 @@ def parse_args():
                         help="Gradient accumulation steps")
     parser.add_argument("--multi-gpu", "--mg", action="store_true",
                         help="Use multiple GPUs for training")
-    parser.add_argument("--parallel", "--p", action="store_true",
-                        help="Start frame-level parallelism")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed")
     return parser.parse_args()
 
-def combined_loss(outputs, labels, criterion):
+def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     """
-    组合损失函数，由交叉熵损失和时序一致性得分构成
+    组合损失函数，由Focal Loss和对比一致性损失组成
     """
-    classification_loss = criterion(outputs['logits'], labels)
+    cls_loss = outputs['logits']
+    cons_scores = outputs['tcm_consistency']
     
-    # 根据标签设置目标一致性值
-    # 真实视频(lable=0)的一致性得分应该接近1
-    # 伪造视频(label=1)的一致性得分应该接近0
-    consistency = torch.sigmoid(outputs['tcm_consistency'])
-    target_consistency = 1.0 - labels.float()
-    if consistency.dim() > 1 and consistency.size(1) == 1:
-        consistency = consistency.squeeze(1)  # 从[B,1]变为[B]
-    consistency_loss = F.mse_loss(consistency, target_consistency)
+    if epoch < 0.2 * max_epochs:
+        cls_loss = criterion(cls_loss, labels)
+        cons_loss = torch.tensor(0.0)
+    else:
+        # 启用时序一致性损失
+        cls_loss = criterion(cls_loss, labels)
+        
+        # 真实样本的索引为 1
+        # 伪造样本的索引为 0
+        real_mask = (labels == 1)
+        fake_mask = ~real_mask
+        
+        s_real = cons_scores[real_mask]
+        s_fake = cons_scores[fake_mask]
+        # 计算对比一致性损失
+        term1 = -torch.log(torch.sum(torch.exp(s_real)) / torch.sum(torch.exp(cons_scores)))
+        term2 = torch.relu(0.3 - torch.mean(s_fake))
+        cons_loss = term1 + term2
+        
+        dynamic_weight = 0.3 * min(1.0, (epoch-0.2*max_epochs)/(0.8*max_epochs))
     
-    cls_weight = torch.exp(-consistency).detach()
-    cons_weight = torch.exp(-classification_loss).detach()
+    # 正交约束
+    loss_orth = torch.norm(torch.mm(outputs['dama_features'].t(), outputs['tcm_features']))**2
     
-    # 归一化
-    cls_weight = cls_weight / (cls_weight + cons_weight)
-    cons_weight = 1 - cls_weight
-    
-    # 加权组合
-    weighted_loss = cls_weight * classification_loss + cons_weight * consistency_loss
-    combined = weighted_loss.mean()
-    return combined, {
-        'cls_loss': classification_loss.item(),
-        'cons_loss': consistency_loss.item(),
+    return cls_loss + dynamic_weight * cons_loss + 0.05 * loss_orth, {
+        'cls_loss': cls_loss.item(),
+        'cons_loss': cons_loss.item(),
+        'orth_loss': loss_orth.item()
     }
 
 def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, accum_steps=2):
@@ -121,7 +127,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
     epoch_cons_loss = running_cons_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
-    epoch_acc = accuracy_score(labels_all, [1 if p >= 0.55 else 0 for p in preds_all])
+    epoch_acc = accuracy_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
     
     return {
         'loss': epoch_loss,
@@ -159,7 +165,7 @@ def val_epoch(model, dataloader, criterion, device, batch_size):
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
     epoch_cons_loss = running_cons_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
-    epoch_acc = accuracy_score(labels_all, [1 if p >= 0.55 else 0 for p in preds_all])
+    epoch_acc = accuracy_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
     
     return {
         'loss': epoch_loss,
@@ -249,7 +255,7 @@ def main():
     print(f"Learning rate: {args.lr}")
     print(f"Feature dimension: {args.dim}")
     print(f"Frame count: {args.frame_count}")
-    print("Input size: (384, 384)")
+    print("Input size: (224, 224)")
     print("Model initialized successfully!")
     
     print("="*50)
@@ -258,7 +264,7 @@ def main():
     
     train_viz = TrainVisualization(os.path.join(args.output, 'train_visualizations'))
     
-    criterion = nn.CrossEntropyLoss()
+    criterion = BinaryFocalLoss(alpha=0.75, gamma=2)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
     

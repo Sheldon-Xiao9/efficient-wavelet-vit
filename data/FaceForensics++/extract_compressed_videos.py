@@ -21,6 +21,7 @@ DATASET_PATHS = {
     'Face2Face': 'Face2Face',
     'FaceSwap': 'FaceSwap',
     'NeuralTextures': 'NeuralTextures',
+    'FaceShifter': 'FaceShifter'
 }
 COMPRESSION = ['c0', 'c23', 'c40']
 

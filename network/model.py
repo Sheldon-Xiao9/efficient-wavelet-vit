@@ -61,11 +61,12 @@ class DeepfakeDetector(nn.Module):
         fused_feats = gate[:, 0].unsqueeze(-1) * dama_feats + gate[:, 1].unsqueeze(-1) * tcm_feats
         
         # 4. 分类
-        logits = self.classifier(fused_feats)
+        logits = self.classifier(fused_feats) # [B, 2]
         
         return {
             'logits': logits,
             'dama_feats': dama_feats,
+            'tcm_feats': tcm_feats,
             'tcm_consistency': tcm_consistency
         }
         
