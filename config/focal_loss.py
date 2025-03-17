@@ -28,6 +28,9 @@ class BinaryFocalLoss(nn.Module):
         self.reduction = reduction
         
     def forward(self, input, target):
+        # 保证 alpha 与 input 在同一设备上
+        if self.alpha is not None and self.alpha.device != input.device:
+            self.alpha = self.alpha.to(input.device)
         logpt = F.binary_cross_entropy_with_logits(input, target, reduction="none")
         pt = torch.exp(-logpt)
         focal_loss = self.alpha * (1-pt)**self.gamma * logpt
