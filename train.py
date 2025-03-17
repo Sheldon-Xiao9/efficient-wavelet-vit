@@ -57,6 +57,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     if epoch < 0.2 * max_epochs:
         cls_loss = criterion(cls_loss, labels)
         cons_loss = torch.tensor(0.0)
+        dynamic_weight = 0.0
     else:
         # 启用时序一致性损失
         cls_loss = criterion(cls_loss, labels)
