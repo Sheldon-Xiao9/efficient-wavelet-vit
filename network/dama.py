@@ -177,7 +177,11 @@ class DAMA(nn.Module):
             # 批处理帧
             for i in range(batch_frames.shape[1]):
                 frame_tensor = batch_frames[:, i].detach().requires_grad_(True)
-                mean_features += self._process_frame(frame_tensor)
+                if i % 2 == 0:
+                    # 使用checkpoint加速
+                    mean_features = checkpoint(self._process_frame, frame_tensor)
+                else:
+                    mean_features += self._process_frame(frame_tensor)
             torch.cuda.empty_cache()
 
         # 连接所有批次的特征
