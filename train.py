@@ -50,13 +50,11 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     """
     组合损失函数，由Focal Loss和对比一致性损失组成
     """
-    print("Getting logits and labels")
     logits = outputs['logits']
     labels = F.one_hot(labels, num_classes=2).float()
     cons_scores = outputs['tcm_consistency']
     
     if epoch < 0.2 * max_epochs:
-        print("No temporal consistency loss mode")
         cls_loss = criterion(logits, labels)
         cons_loss = torch.tensor(0.0)
         dynamic_weight = 0.0
@@ -79,10 +77,8 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
         dynamic_weight = 0.3 * min(1.0, (epoch-0.2*max_epochs)/(0.8*max_epochs))
     
     # 正交约束
-    print("Calculating orthogonality loss")
     loss_orth = torch.norm(torch.mm(outputs['dama_feats'].t(), outputs['tcm_feats']))**2
     
-    print("Loss calculated")
     return cls_loss + dynamic_weight * cons_loss + 0.01 * loss_orth, {
         'cls_loss': cls_loss.item(),
         'cons_loss': cons_loss.item(),
@@ -99,24 +95,15 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     optimizer.zero_grad()
     
     for i, (frames, labels) in enumerate(tqdm(dataloader, desc="Training iteration")):
-        print("Batch start")
         frames, labels = frames.to(device), labels.to(device)
-        print("Frames and labels loaded")
         
-        print("Model forward")
         outputs = model(frames, batch_size=batch_size)
-        print("Model forward done")
         
-        print("Combined loss calculation")
         loss, losses = combined_loss(outputs, labels, criterion, epoch, max_epochs)
-        print("Combined loss calculated successfully")
         
         # 梯度累积
-        print("Backward start")
-        print("Accumulate gradient")
         loss = loss / accum_steps
         loss.backward()
-        print("Gradient accumulated, loss backward done")
         
         if (i+1) % accum_steps == 0:
             optimizer.step()
@@ -278,14 +265,13 @@ def main():
     
     train_viz = TrainVisualization(os.path.join(args.output, 'train_visualizations'))
     
-    criterion = BinaryFocalLoss(alpha=0.25, gamma=2)
+    criterion = BinaryFocalLoss(alpha=0.75, gamma=2)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
     
     best_val_auc = 0.0
     for epoch in range(args.epochs):
         start_time = time.time()
-        print(f"Start timing...")
         
         # 如果训练已超过 70% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
         if epoch >= 0.7 * args.epochs:

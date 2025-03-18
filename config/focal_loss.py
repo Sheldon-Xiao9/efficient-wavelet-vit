@@ -17,23 +17,35 @@ class BinaryFocalLoss(nn.Module):
     def __init__(self, alpha=0.75, gamma=2, reduction="mean"):
         super(BinaryFocalLoss, self).__init__()
         if alpha is not None:
-            if isinstance(alpha, float):
-                self.alpha = torch.Tensor([alpha, 1-alpha])
-            elif isinstance(alpha, list):
-                self.alpha = torch.Tensor(alpha)
-            else:
-                self.alpha = alpha
-            self.alpha = self.alpha.to(torch.float32)
+            self.alpha = torch.tensor([alpha, 1 - alpha], dtype=torch.float32)
+        else:
+            self.alpha = None
         self.gamma = gamma
         self.reduction = reduction
         
     def forward(self, input, target):
-        # 保证 alpha 与 input 在同一设备上
+        """
+        计算二分类 Focal Loss
+        
+        :param input: 模型输出的logits，形状为 (B, 2)，B 为 batch size，第二维度为正负类别
+        :type input: torch.Tensor
+        :param target: 真实标签，形状为 (B, 2)，B 为 batch size，第二维度为正负类别
+        """
+        probs = F.softmax(input, dim=1)
+        
+        # 计算真实类别的概率
+        pt = torch.sum(target * probs, dim=1)
+        
+        logpt = -torch.log(pt + 1e-8)
+        factor = (1 - pt) ** self.gamma
         if self.alpha is not None and self.alpha.device != input.device:
-            self.alpha = self.alpha.to(input.device)
-        logpt = F.binary_cross_entropy_with_logits(input, target, reduction="none")
-        pt = torch.exp(-logpt)
-        focal_loss = self.alpha * (1-pt)**self.gamma * logpt
+            # alpha[0]: 正类样本的权重
+            # alpha[1]: 负类样本的权重
+            alpha_weight = torch.sum(self.alpha.to(input.device) * target, dim=1)
+            focal_loss = factor * alpha_weight * logpt
+        else:
+            focal_loss = factor * logpt
+            print(f"alpha lost: {focal_loss}")
         
         # 计算损失
         if self.reduction == "mean":
