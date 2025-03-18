@@ -179,7 +179,7 @@ class DAMA(nn.Module):
                 frame_tensor = batch_frames[:, i].detach().requires_grad_(True)
                 if i % 2 == 0:
                     # 使用checkpoint加速
-                    mean_features = checkpoint(self._process_frame, frame_tensor)
+                    mean_features = checkpoint(self._process_frame, frame_tensor, use_reentrant=False)
                 else:
                     mean_features += self._process_frame(frame_tensor)
             torch.cuda.empty_cache()
