@@ -50,17 +50,17 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     """
     组合损失函数，由Focal Loss和对比一致性损失组成
     """
-    cls_loss = outputs['logits']
+    logits = outputs['logits']
     labels = F.one_hot(labels, num_classes=2).float()
     cons_scores = outputs['tcm_consistency']
     
     if epoch < 0.2 * max_epochs:
-        cls_loss = criterion(cls_loss, labels)
-        cons_loss = torch.tensor(0.0)
+        cls_loss = criterion(logits, labels)
+        cons_loss = torch.tensor(0.0, device=logits.device)
         dynamic_weight = 0.0
     else:
         # 启用时序一致性损失
-        cls_loss = criterion(cls_loss, labels)
+        cls_loss = criterion(logits, labels)
         
         # 真实样本的索引为 1
         # 伪造样本的索引为 0
@@ -79,7 +79,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     # 正交约束
     loss_orth = torch.norm(torch.mm(outputs['dama_feats'].t(), outputs['tcm_feats']))**2
     
-    return cls_loss + dynamic_weight * cons_loss + 0.05 * loss_orth, {
+    return cls_loss + dynamic_weight * cons_loss + 0.01 * loss_orth, {
         'cls_loss': cls_loss.item(),
         'cons_loss': cons_loss.item(),
         'orth_loss': loss_orth.item()

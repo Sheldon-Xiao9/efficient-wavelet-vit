@@ -169,7 +169,7 @@ class FaceForensicsLoader(Dataset):
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 frames.append(img)
             else:
-                blank = np.zeros((256, 256, 3), dtype=np.uint8)
+                blank = np.zeros((224, 224, 3), dtype=np.uint8)
                 frames.append(blank)
         
         if self.transform:
