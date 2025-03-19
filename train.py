@@ -62,15 +62,15 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
         # 启用时序一致性损失
         cls_loss = criterion(logits, labels)
         
+        log_probs = F.log_softmax(cons_scores, dim=1)
         # 真实样本的索引为 0
         # 伪造样本的索引为 1
         real_mask = (labels[:, 0] == 1.0)
         fake_mask = ~real_mask
         
-        s_real = cons_scores[real_mask]
-        s_fake = cons_scores[fake_mask]
         # 计算对比一致性损失
-        term1 = -torch.log(torch.sum(torch.exp(s_real)) / torch.sum(torch.exp(cons_scores)))
+        term1 = -log_probs[real_mask, 0].mean()
+        s_fake = cons_scores[fake_mask]
         term2 = torch.relu(0.3 - torch.mean(s_fake))
         cons_loss = term1 + term2
         
@@ -302,7 +302,7 @@ def main():
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
             'best_val_auc': best_val_auc,
-        }, os.path.join(args.output, f'checkpoint_{epoch}.pth'))
+        }, os.path.join(args.output, f'checkpoint_{epoch+1}.pth'))
         
         epoch_time = time.time() - start_time
         print(f"Epoch {epoch+1}/{args.epochs}")
@@ -320,6 +320,11 @@ def main():
             val_metrics=val_metrics,
             lr=optimizer.param_groups[0]['lr']
         )
+        
+        # 每两轮保存一次可视化结果
+        if (epoch+1) % 2 == 0:
+            train_viz.plot_all()
+        
         print("="*50)
     
     # 如果有可视化参数，则生成可视化结果
