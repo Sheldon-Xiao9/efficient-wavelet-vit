@@ -62,9 +62,9 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
         # 启用时序一致性损失
         cls_loss = criterion(logits, labels)
         
-        # 真实样本的索引为 1
-        # 伪造样本的索引为 0
-        real_mask = (labels[:, 1] == 1.0)
+        # 真实样本的索引为 0
+        # 伪造样本的索引为 1
+        real_mask = (labels[:, 0] == 1.0)
         fake_mask = ~real_mask
         
         s_real = cons_scores[real_mask]
@@ -265,7 +265,7 @@ def main():
     
     train_viz = TrainVisualization(os.path.join(args.output, 'train_visualizations'))
     
-    criterion = BinaryFocalLoss(alpha=0.75, gamma=2)
+    criterion = BinaryFocalLoss(alpha=0.75, gamma=1)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
     
@@ -302,7 +302,7 @@ def main():
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
             'best_val_auc': best_val_auc,
-        }, os.path.join(args.output, 'checkpoint.pth'))
+        }, os.path.join(args.output, f'checkpoint_{epoch}.pth'))
         
         epoch_time = time.time() - start_time
         print(f"Epoch {epoch+1}/{args.epochs}")
