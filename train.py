@@ -163,7 +163,7 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
             
             running_loss += loss.item() * frames.size(0)
             running_cls_loss += losses['cls_loss'] * frames.size(0)
-            running_cons_loss += losses['cons_loss'] * frames.size(0)
+            running_cons_loss += losses['incons_loss'] * frames.size(0)
             
             # 分类预测
             preds = torch.softmax(outputs['logits'], dim=1)[:, 1].detach().cpu().numpy()
@@ -180,7 +180,7 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
     return {
         'loss': epoch_loss,
         'cls_loss': epoch_cls_loss,
-        'cons_loss': epoch_cons_loss,
+        'incons_loss': epoch_cons_loss,
         'auc': epoch_auc,
         'acc': epoch_acc
     }
