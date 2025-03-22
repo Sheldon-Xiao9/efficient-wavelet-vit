@@ -52,36 +52,45 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     """
     logits = outputs['logits']
     labels = F.one_hot(labels, num_classes=2).float()
-    cons_scores = outputs['tcm_consistency']
+    incons_scores = outputs['tcm_inconsistency']
     
-    if epoch < 0.2 * max_epochs:
+    if epoch < 0.1 * max_epochs:
         cls_loss = criterion(logits, labels)
-        cons_loss = torch.tensor(0.0)
+        incons_loss = torch.tensor(0.0)
         dynamic_weight = 0.0
+        return cls_loss, {
+            'cls_loss': cls_loss.item(),
+            'incons_loss': incons_loss.item(),
+            'orth_loss': 0.0
+        }
+    elif epoch >= 0.1 * max_epochs and epoch < 0.2 * max_epochs:
+        # 启用正交约束
+        cls_loss = criterion(logits, labels)
+        dynamic_weight = 0.0
+        incons_loss = torch.tensor(0.0)
     else:
         # 启用时序一致性损失
         cls_loss = criterion(logits, labels)
         
-        log_probs = F.log_softmax(cons_scores, dim=1)
+        incons_scores = incons_scores.mean(dim=1)
         # 真实样本的索引为 0
         # 伪造样本的索引为 1
         real_mask = (labels[:, 0] == 1.0)
         fake_mask = ~real_mask
         
         # 计算对比一致性损失
-        term1 = -log_probs[real_mask, 0].mean()
-        s_fake = cons_scores[fake_mask]
-        term2 = torch.relu(0.3 - torch.mean(s_fake))
-        cons_loss = term1 + term2
+        term1 = torch.relu(torch.mean(incons_scores[real_mask]) - 0.1)
+        term2 = torch.relu(0.3 - torch.mean(incons_scores[fake_mask]))
+        incons_loss = term1 + term2
         
         dynamic_weight = 0.3 * min(1.0, (epoch-0.2*max_epochs)/(0.8*max_epochs))
     
     # 正交约束
     loss_orth = torch.norm(torch.mm(outputs['dama_feats'].t(), outputs['tcm_feats']))**2
     
-    return cls_loss + dynamic_weight * cons_loss + 0.01 * loss_orth, {
+    return cls_loss + dynamic_weight * incons_loss + 0.01 * loss_orth, {
         'cls_loss': cls_loss.item(),
-        'cons_loss': cons_loss.item(),
+        'incons_loss': incons_loss.item(),
         'orth_loss': loss_orth.item()
     }
 
@@ -112,7 +121,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
         
         running_loss += loss.item() * frames.size(0)
         running_cls_loss += losses['cls_loss'] * frames.size(0)
-        running_cons_loss += losses['cons_loss'] * frames.size(0)
+        running_cons_loss += losses['incons_loss'] * frames.size(0)
         
         # 分类预测
         preds = torch.softmax(outputs['logits'], dim=1)[:, 1].detach().cpu().numpy()
@@ -133,7 +142,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     return {
         'loss': epoch_loss,
         'cls_loss': epoch_cls_loss,
-        'cons_loss': epoch_cons_loss,
+        'incons_loss': epoch_cons_loss,
         'auc': epoch_auc,
         'acc': epoch_acc
     }

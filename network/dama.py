@@ -8,9 +8,9 @@ from einops import rearrange
 
 class DAMA(nn.Module):
     """
-    DAMA - Dynamic Adaptive Multihead Attention (DAMA) module
+    DAMA - Dynamic Adaptive Multihaed Attention Module (DAMA)
     
-    DAMA 是一个动态自适应多头注意力模块，用于提取关键帧的空间特征与时频特征。
+    DAMA 是一个动态自适应多分支注意力模块，根据已提取的视频帧空间特征、频域特征，结合注意力机制实现视频帧的特征融合。
     """
     def __init__(self, in_channels=3, dim=128, num_heads=4, levels=3, batch_size=16):
         super().__init__()

@@ -2,13 +2,13 @@ import torch
 from torch import nn
 from einops import rearrange
 from transformers import ViTModel # type: ignore
+from pytorch_wavelets import DWTForward # type: ignore
 
 class TCM(nn.Module):
     """
     TCM - Temporal Consistency Module (TCM)
     
-    TCM是一个基于ViT和Transformer的时序一致性分析模块，通过分析视频帧序列的时序特征
-    并结合DAMA提取的全局特征，检测深度伪造视频中的时序不一致性。
+    基于ViT特征提取和轻量级时序分析的一致性检测模块
     """
     def __init__(self, dama_dim=128, vit_model='google/vit-base-patch16-224', freeze_vit=True):
         super().__init__()
@@ -19,48 +19,35 @@ class TCM(nn.Module):
         
         # 位置编码
         self.position_embedding = nn.Embedding(1000, self.vit.config.hidden_size)
-        # if dama_dim != 3:  # 假设DAMA输出非3通道，需调整ViT输入
-        #     original_conv = self.vit.embeddings.patch_embeddings.projection
-        #     self.vit.embeddings.patch_embeddings.projection = nn.Conv2d(
-        #         dama_dim, original_conv.out_channels, 
-        #         kernel_size=original_conv.kernel_size, 
-        #         stride=original_conv.stride
-        #     )
         
         # 冻结ViT参数
         if freeze_vit:
             for param in self.vit.parameters():
                 param.requires_grad = False
         
-        # 时序处理层
-        encoder_layers = nn.TransformerEncoderLayer(
-            d_model=self.vit.config.hidden_size,
-            nhead=4,
-            dim_feedforward=1024,
-            batch_first=True
+        # 轻量级的GRU处理帧间关系
+        self.gru = nn.GRU(
+            input_size=self.vit.config.hidden_size,
+            hidden_size=self.vit.config.hidden_size,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True
         )
-        self.temporal_layer = nn.TransformerEncoder(encoder_layers, num_layers=2)
         
-        # 动态门控评分网络
+        # 特征压缩层(双向GRU输出合并)
+        self.feature_compressor = nn.Linear(self.vit.config.hidden_size * 2, self.vit.config.hidden_size)
+        
+        # DAMA特征处理
         self.dama_fused = nn.Linear(dama_dim, self.vit.config.hidden_size)
-        self.gate_net = nn.Sequential(
-            nn.Linear(self.vit.config.hidden_size, 1),
-            nn.Sigmoid()
-        )
+        
+        # 一致性评分网络
         self.score_net = nn.Sequential(
             nn.Linear(self.vit.config.hidden_size, 64),
             nn.ReLU(),
             nn.Linear(64, 1)
         )
-        self.cross_att = nn.MultiheadAttention(
-            embed_dim=self.vit.config.hidden_size,
-            kdim=self.vit.config.hidden_size,
-            vdim=self.vit.config.hidden_size,
-            num_heads=4,
-            batch_first=True
-        )
         
-        # 全局时序一致性特征提取器
+        # 全局一致性特征提取器
         self.global_consistency = nn.Sequential(
             nn.Linear(self.vit.config.hidden_size, 256),
             nn.ReLU(),
@@ -74,6 +61,7 @@ class TCM(nn.Module):
         B, T, C, H, W = x.shape
         frames = rearrange(x, 'b t c h w -> (b t) c h w')
         
+        # ViT特征提取
         all_features = []
         for i in range(0, B*T, batch_size):
             batch_frames = frames[i:min(i+batch_size, B*T)]
@@ -81,49 +69,51 @@ class TCM(nn.Module):
                 with torch.no_grad():
                     outputs = self.vit(pixel_values=batch_frames)
             else:
-                outputs = self.vit(pixel_values=batch_frames) # [B*T, D]
-            batch_feats = outputs.last_hidden_state[:, 0] # [B*T, D]
+                outputs = self.vit(pixel_values=batch_frames)
+            batch_feats = outputs.last_hidden_state[:, 0]
             all_features.append(batch_feats)
             torch.cuda.empty_cache()
+        
         vit_features = torch.cat(all_features, dim=0)
-        vit_features = vit_features.view(B, T, -1) # [B, T, D]
+        vit_features = vit_features.view(B, T, -1)  # [B, T, D]
         
         # 添加时序位置编码
-        position_ids = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)  # [B, T]
-        vit_features = vit_features + self.position_embedding(position_ids) # [B, T, D]
+        position_ids = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
+        vit_features = vit_features + self.position_embedding(position_ids)
         
-        # 时序处理
-        temporal_features = self.temporal_layer(vit_features) # [B, T, D]
+        # GRU处理时序特征
+        temporal_features, _ = self.gru(vit_features)  # [B, T, 2*D]
+        temporal_features = self.feature_compressor(temporal_features)  # [B, T, D]
         
-        # DAMA特征融合
-        dama_features = self.dama_fused(dama_out).unsqueeze(1)
+        # 计算帧间特征差异矩阵
+        frame_features = temporal_features.unsqueeze(2)  # [B, T, 1, D]
+        frame_features_t = temporal_features.unsqueeze(1)  # [B, 1, T, D]
+        diff_matrix = torch.norm(frame_features - frame_features_t, dim=3)  # [B, T, T]
         
-        # 交叉注意力
-        att_output, _ = self.cross_att(
-            query=temporal_features,
-            key=dama_features,
-            value=dama_features
-        )
-        # 残差连接
-        fused_features = att_output + temporal_features
+        # 每帧的不一致性得分(与其他帧的平均差异)
+        inconsistency_scores = diff_matrix.mean(dim=2, keepdim=True)  # [B, T, 1]
         
-        # 评分网络
-        gate = self.gate_net(fused_features) # [B, T, 1]
-        gated_features = gate * temporal_features + (1 - gate) * fused_features
+        # DAMA特征与帧特征融合
+        dama_global = self.dama_fused(dama_out).unsqueeze(1)  # [B, 1, D]
+        dama_similarity = torch.cosine_similarity(
+            temporal_features, dama_global.expand(-1, T, -1), dim=2
+        ).unsqueeze(-1)  # [B, T, 1]
         
-        # 帧得分
-        scores = self.score_net(gated_features) # [B, T, 1]
+        # 融合不一致性得分和DAMA相似度
+        combined_scores = inconsistency_scores * dama_similarity
         
-        # 全局一致性分数计算
-        temporal_diff = temporal_features - temporal_features.mean(dim=1, keepdim=True)
-        consistency_score = torch.sqrt((temporal_diff ** 2).mean(dim=[1, 2]))  # [B]
+        # 计算帧权重
+        weights = torch.softmax(combined_scores.squeeze(-1), dim=1).unsqueeze(-1)  # [B, T, 1]
         
-        # 全局一致性特征提取
-        weights = torch.softmax(scores.squeeze(-1), dim=1).unsqueeze(-1) # [B, T, 1]
-        weighted_feats = (weights * temporal_features).sum(dim=1) # [B, D]
-        tcm_feats = self.global_consistency(weighted_feats) # [B, dama_dim]
+        # 全局一致性分数
+        consistency_score = 1.0 - torch.mean(inconsistency_scores.squeeze(-1), dim=1)  # [B]
+        
+        # 加权特征聚合
+        weighted_feats = (weights * temporal_features).sum(dim=1)  # [B, D]
+        tcm_feats = self.global_consistency(weighted_feats)  # [B, dama_dim]
         
         return {
-            'consistency_score': consistency_score,
-            'tcm_features': tcm_feats
+            'inconsistency_scores': inconsistency_scores,
+            'tcm_features': tcm_feats,
+            'frame_weights': weights.squeeze(-1)  # 返回每帧权重以便可视化
         }

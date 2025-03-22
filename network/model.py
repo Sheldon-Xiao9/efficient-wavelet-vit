@@ -53,7 +53,7 @@ class DeepfakeDetector(nn.Module):
         
         # 2. TCM分析时序一致性
         tcm_outputs = self.tcm(x, dama_feats)
-        tcm_consistency = tcm_outputs['consistency_score'] # [B]
+        tcm_inconsistency = tcm_outputs['inconsistency_scores'] # [B]
         tcm_feats = tcm_outputs['tcm_features'] # [B, T, D]
         
         # 3. 特征融合
@@ -67,6 +67,6 @@ class DeepfakeDetector(nn.Module):
             'logits': logits,
             'dama_feats': dama_feats,
             'tcm_feats': tcm_feats,
-            'tcm_consistency': tcm_consistency
+            'tcm_inconsistency': tcm_inconsistency
         }
         
