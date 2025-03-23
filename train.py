@@ -81,7 +81,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     for i, (frames, labels) in enumerate(tqdm(dataloader, desc="Training iteration")):
         frames, labels = frames.to(device), labels.to(device)
         
-        outputs = model(frames, batch_size=batch_size)
+        outputs = model(frames, batch_size=batch_size, ablation='dynamic')
         
         loss, losses = combined_loss(outputs, labels, criterion, epoch, max_epochs)
         
@@ -129,7 +129,7 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
         for frames, labels in dataloader:
             frames, labels = frames.to(device), labels.to(device)
             
-            outputs = model(frames, batch_size=batch_size)
+            outputs = model(frames, batch_size=batch_size, ablation='dynamic')
             loss, losses = combined_loss(outputs, labels, criterion, epoch, max_epochs)
             
             running_loss += loss.item() * frames.size(0)
