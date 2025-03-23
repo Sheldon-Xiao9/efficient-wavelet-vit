@@ -46,6 +46,15 @@ def parse_args():
                         help="Random seed")
     return parser.parse_args()
 
+def orthogonal_loss(space_feats, freq_feats):
+    """
+    正交约束损失
+    """
+    space_feats = F.normalize(space_feats, p=2, dim=1)
+    freq_feats = F.normalize(freq_feats, p=2, dim=1)
+    loss = torch.norm(torch.mm(space_feats.t(), freq_feats))**2
+    return loss
+
 def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     """
     组合损失函数，由Focal Loss和正交约束组成
@@ -53,7 +62,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     logits = outputs['logits']
     labels = F.one_hot(labels, num_classes=2).float()
     
-    if epoch < 0.2 * max_epochs:
+    if epoch < 0.4 * max_epochs:
         cls_loss = criterion(logits, labels)
         return cls_loss, {
             'cls_loss': cls_loss.item(),
@@ -63,9 +72,10 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
         # 启用时序一致性损失
         cls_loss = criterion(logits, labels)
         # 正交约束
-        loss_orth = torch.norm(torch.mm(outputs['space'].t(), outputs['freq']))**2
+        loss_orth = orthogonal_loss(outputs['space_feats'], outputs['freq_feats'])
+        lambda_orth  = 0.01 * min(1.0, (epoch - 0.4 * max_epochs) / (0.6 * max_epochs))
     
-    return cls_loss + 0.01 * loss_orth, {
+    return cls_loss + lambda_orth * loss_orth, {
         'cls_loss': cls_loss.item(),
         'orth_loss': loss_orth.item()
     }
@@ -86,6 +96,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
         loss, losses = combined_loss(outputs, labels, criterion, epoch, max_epochs)
         
         # 梯度累积
+        orig_loss = loss
         loss = loss / accum_steps
         loss.backward()
         
@@ -94,7 +105,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
             optimizer.zero_grad()
             print(f"Batch {i+1}/{len(dataloader)}: Losses: {losses}")
         
-        running_loss += loss.item() * frames.size(0)
+        running_loss += orig_loss.item() * frames.size(0)
         running_cls_loss += losses['cls_loss'] * frames.size(0)
         
         # 分类预测
@@ -250,8 +261,8 @@ def main():
     for epoch in range(args.epochs):
         start_time = time.time()
         
-        # 如果训练已超过 70% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
-        if epoch >= 0.7 * args.epochs:
+        # 如果训练已超过 80% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
+        if epoch >= 0.8 * args.epochs:
             for param in model.dama.space_efficient[-1].parameters():
                 param.requires_grad = True
             print("Unfreezing EfficientNet parameters...")
