@@ -14,7 +14,7 @@ class BinaryFocalLoss(nn.Module):
     :param reduction: 损失函数的计算方式，可选值有 "mean", "sum", "none"
     :type reduction: str
     """
-    def __init__(self, alpha=0.75, gamma=2, reduction="mean"):
+    def __init__(self, alpha=0.25, gamma=2, reduction="mean"):
         super(BinaryFocalLoss, self).__init__()
         if alpha is not None:
             self.alpha = torch.tensor([alpha, 1 - alpha], dtype=torch.float32)

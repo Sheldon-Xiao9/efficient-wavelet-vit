@@ -99,40 +99,40 @@ class EvalVisualization:
         plt.savefig(os.path.join(self.output_path, 'prediction_distribution.png'))
         plt.close()
         
-    def plot_cons_vs_pred(self, consistency: np.ndarray, predictions: np.ndarray, labels: np.ndarray) -> None:
+    def plot_orth_vs_pred(self, orth_loss: np.ndarray, predictions: np.ndarray, labels: np.ndarray) -> None:
         """
         绘制一致性得分与预测概率的关系
         
-        :param consistency: 一致性得分
-        :type consistency: np.ndarray
+        :param orth_loss: 正交约束
+        :type orth_loss: np.ndarray
         :param predictions: 预测概率
         :type predictions: np.ndarray
         :param labels: 真实标签
         :type labels: np.ndarray
         """
-        if len(consistency) == 0:
+        if len(orth_loss) == 0:
             return
         
         plt.figure(figsize=(10, 6))
-        plt.scatter(consistency[labels == 0], predictions[labels == 0], label='Real', alpha=0.7, c='blue')
-        plt.scatter(consistency[labels == 1], predictions[labels == 1], label='Fake', alpha=0.7, c='red')
+        plt.scatter(orth_loss[labels == 0], predictions[labels == 0], label='Real', alpha=0.7, c='blue')
+        plt.scatter(orth_loss[labels == 1], predictions[labels == 1], label='Fake', alpha=0.7, c='red')
         plt.axhline(y=0.5, color='k', linestyle='--', linewidth=1)
-        plt.xlabel('Consistency Score')
+        plt.xlabel('Orth Loss Score')
         plt.ylabel('Prediction')
-        plt.title('Consistency Scores vs Predictions')
+        plt.title('Orth Loss Scores vs Predictions')
         plt.grid(True, alpha=0.3)
-        plt.savefig(os.path.join(self.output_path, 'consistency_vs_prediction.png'))
+        plt.savefig(os.path.join(self.output_path, 'orth_vs_prediction.png'))
         plt.close()
     
-    def plot_metrics(self, metrix, labels: np.ndarray, predictions: np.ndarray, consistency: np.ndarray) -> None:
+    def plot_metrics(self, metrix, labels: np.ndarray, predictions: np.ndarray, orth_loss: np.ndarray) -> None:
         """生成所有评估指标的可视化"""
         self.plot_confusion_matrix(metrix['conf_matrix'])
         self.plot_roc_curve(labels, predictions, metrix['auc'])
         self.plot_pr_curve(labels, predictions, metrix['ap'])
         self.plot_pred_distribution(predictions, labels)
         
-        if len(consistency) > 0:
-            self.plot_cons_vs_pred(consistency, predictions, labels)
+        if len(orth_loss) > 0:
+            self.plot_orth_vs_pred(orth_loss, predictions, labels)
             
 class TrainVisualization:
     """可视化训练过程"""
@@ -145,8 +145,8 @@ class TrainVisualization:
             'val_loss': [],
             'train_cls_loss': [],
             'val_cls_loss': [],
-            'train_cons_loss': [],
-            'val_cons_loss': [],
+            'train_orth_loss': [],
+            'val_orth_loss': [],
             'train_acc': [],
             'val_acc': [],
             'train_auc': [],
@@ -174,8 +174,8 @@ class TrainVisualization:
         
         self.history['train_cls_loss'].append(train_metrics.get('cls_loss', 0))
         self.history['val_cls_loss'].append(val_metrics.get('cls_loss', 0))
-        self.history['train_cons_loss'].append(train_metrics.get('cons_loss', 0))
-        self.history['val_cons_loss'].append(val_metrics.get('cons_loss', 0))
+        self.history['train_orth_loss'].append(train_metrics.get('orth_loss', 0))
+        self.history['val_orth_loss'].append(val_metrics.get('orth_loss', 0))
         
         # 更新准确率和AUC
         self.history['train_acc'].append(train_metrics.get('acc', 0))
@@ -228,17 +228,17 @@ class TrainVisualization:
         
         # 一致性损失与分类损失
         train_cls = self._smooth_curve(self.history['train_cls_loss']) if smoothing else self.history['train_cls_loss']
-        train_cons = self._smooth_curve(self.history['train_cons_loss']) if smoothing else self.history['train_cons_loss']
+        train_orth = self._smooth_curve(self.history['train_orth_loss']) if smoothing else self.history['train_orth_loss']
         val_cls = self._smooth_curve(self.history['val_cls_loss']) if smoothing else self.history['val_cls_loss']
-        val_cons = self._smooth_curve(self.history['val_cons_loss']) if smoothing else self.history['val_cons_loss']
+        val_orth = self._smooth_curve(self.history['val_orth_loss']) if smoothing else self.history['val_orth_loss']
         
         axes[1].plot(self.history['epochs'], train_cls, 'c-', linewidth=2, label='Train Class. Loss')
-        axes[1].plot(self.history['epochs'], train_cons, 'g-', linewidth=2, label='Train Cons. Loss')
+        axes[1].plot(self.history['epochs'], train_orth, 'g-', linewidth=2, label='Train Orth. Loss')
         axes[1].plot(self.history['epochs'], val_cls, 'm-', linewidth=2, label='Val Class. Loss')
-        axes[1].plot(self.history['epochs'], val_cons, 'y-', linewidth=2, label='Val Cons. Loss')
+        axes[1].plot(self.history['epochs'], val_orth, 'y-', linewidth=2, label='Val Orth. Loss')
         axes[1].set_xlabel('Epochs')
         axes[1].set_ylabel('Loss')
-        axes[1].set_title('Classification and Consistency Loss')
+        axes[1].set_title('Classification and Orthogonality Loss')
         axes[1].legend()
         axes[1].grid(True, alpha=0.3)
         
@@ -357,8 +357,8 @@ class TrainVisualization:
                 'val_loss': self.history['val_loss'],
                 'train_cls_loss': self.history['train_cls_loss'],
                 'val_cls_loss': self.history['val_cls_loss'],
-                'train_cons_loss': self.history['train_cons_loss'],
-                'val_cons_loss': self.history['val_cons_loss'],
+                'train_orth_loss': self.history['train_orth_loss'],
+                'val_orth_loss': self.history['val_orth_loss'],
                 'train_acc': self.history['train_acc'],
                 'val_acc': self.history['val_acc'],
                 'train_auc': self.history['train_auc'],

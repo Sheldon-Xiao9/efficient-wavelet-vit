@@ -110,28 +110,45 @@ def test_model(args):
         print(f"Input shape: Frames - {frames.shape}; Labels - {labels.shape}")
         print("="*50)
         
+        B, K, C, H, W = frames.shape
+        
         # 分步训练测试
         with torch.no_grad():
-            start_time = time.time()
-            
             # DAMA模块
             print("3. Testing DAMA module...")
             dama_feats = model.dama(frames, batch_size=batch_size)
-            print(f"DAMA output shape: {dama_feats.shape}")
-            print("="*50)
-            
-            # TCM模块
-            print("4. Testing TCM module...")
-            tcm_outputs = model.tcm(frames, dama_feats)
-            print("TCM output keys: ")
-            for key, value in tcm_outputs.items():
+            for key, value in dama_feats.items():
                 if isinstance(value, torch.Tensor):
                     print(f"  - {key}: {value.shape}")
             print("="*50)
             
+            # MWT模块
+            print("4. Testing MWT module...")
+            mwt_outputs = []
+            for k in range(K):
+                frame_k = frames[:, k]
+                mwt_output = model.mwt(frame_k)
+                mwt_outputs.append(mwt_output)
+            mwt_outputs = torch.stack(mwt_outputs)
+            print(f"MWT output shape: {mwt_outputs.shape}")
+            print("="*50)
+            
+            # SFE模块
+            print("5. Testing SFE module...")
+            sfe_outputs = []
+            for k in range(K):
+                frame_k = frames[:, k]
+                sfe_output = model.sfe(frame_k)
+                sfe_outputs.append(sfe_output)
+            sfe_outputs = torch.stack(sfe_outputs)
+            print("SFE output keys: ")
+            print(f"MWT output shape: {sfe_outputs.shape}")
+            print("="*50)
+            
             # 测试完整模型
-            print("5. Testing complete model...")
-            outputs = model(frames, batch_size=batch_size)
+            print("6. Testing complete model...")
+            start_time = time.time()
+            outputs = model(frames, batch_size=batch_size, ablation='dynamic')
             print("Model output keys: ")
             for key, value in outputs.items():
                 if isinstance(value, torch.Tensor):
@@ -139,12 +156,11 @@ def test_model(args):
             print("="*50)
             
             # 打印结果
-            if 'logits' in outputs:
-                probs = softmax(outputs['logits'], dim=1)
-                print(f"Predicted probabilities: ")
-                for i in range(len(labels)):
-                    print(f"  - Sample {i+1}: Real: {probs[i, 0].item():.4f}, Fake: {probs[i, 1].item():.4f}")
-                print("="*50)
+            probs = softmax(outputs['logits'], dim=1)
+            print(f"Predicted probabilities: ")
+            for i in range(len(labels)):
+                print(f"  - Sample {i+1}: Real: {probs[i, 0].item():.4f}, Fake: {probs[i, 1].item():.4f}")
+            print("="*50)
             
             end_time = time.time()
             print(f"Time elapsed: {end_time - start_time:.2f} seconds")

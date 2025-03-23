@@ -48,49 +48,25 @@ def parse_args():
 
 def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     """
-    组合损失函数，由Focal Loss和对比一致性损失组成
+    组合损失函数，由Focal Loss和正交约束组成
     """
     logits = outputs['logits']
     labels = F.one_hot(labels, num_classes=2).float()
-    incons_scores = outputs['tcm_inconsistency']
     
-    if epoch < 0.1 * max_epochs:
+    if epoch < 0.2 * max_epochs:
         cls_loss = criterion(logits, labels)
-        incons_loss = torch.tensor(0.0)
-        dynamic_weight = 0.0
         return cls_loss, {
             'cls_loss': cls_loss.item(),
-            'incons_loss': incons_loss.item(),
             'orth_loss': 0.0
         }
-    elif epoch >= 0.1 * max_epochs and epoch < 0.2 * max_epochs:
-        # 启用正交约束
-        cls_loss = criterion(logits, labels)
-        dynamic_weight = 0.0
-        incons_loss = torch.tensor(0.0)
     else:
         # 启用时序一致性损失
         cls_loss = criterion(logits, labels)
-        
-        incons_scores = incons_scores.mean(dim=1)
-        # 真实样本的索引为 0
-        # 伪造样本的索引为 1
-        real_mask = (labels[:, 0] == 1.0)
-        fake_mask = ~real_mask
-        
-        # 计算对比一致性损失
-        term1 = torch.relu(torch.mean(incons_scores[real_mask]) - 0.1)
-        term2 = torch.relu(0.3 - torch.mean(incons_scores[fake_mask]))
-        incons_loss = term1 + term2
-        
-        dynamic_weight = 0.3 * min(1.0, (epoch-0.2*max_epochs)/(0.8*max_epochs))
+        # 正交约束
+        loss_orth = torch.norm(torch.mm(outputs['space'].t(), outputs['freq']))**2
     
-    # 正交约束
-    loss_orth = torch.norm(torch.mm(outputs['dama_feats'].t(), outputs['tcm_feats']))**2
-    
-    return cls_loss + dynamic_weight * incons_loss + 0.01 * loss_orth, {
+    return cls_loss + 0.01 * loss_orth, {
         'cls_loss': cls_loss.item(),
-        'incons_loss': incons_loss.item(),
         'orth_loss': loss_orth.item()
     }
 
@@ -98,7 +74,6 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     model.train()
     running_loss = 0.0
     running_cls_loss = 0.0
-    running_cons_loss = 0.0
     preds_all, labels_all = [], []
     
     optimizer.zero_grad()
@@ -121,28 +96,25 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
         
         running_loss += loss.item() * frames.size(0)
         running_cls_loss += losses['cls_loss'] * frames.size(0)
-        running_cons_loss += losses['incons_loss'] * frames.size(0)
         
         # 分类预测
         preds = torch.softmax(outputs['logits'], dim=1)[:, 1].detach().cpu().numpy()
         preds_all.extend(preds)
         labels_all.extend(labels.cpu().numpy())
         
-    if len(dataloader.dataset) % accum_steps != 0:
+    if len(dataloader) % accum_steps != 0:
         optimizer.step()
         optimizer.zero_grad()
         
     # 计算指标
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
-    epoch_cons_loss = running_cons_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
     epoch_acc = accuracy_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
     
     return {
         'loss': epoch_loss,
         'cls_loss': epoch_cls_loss,
-        'incons_loss': epoch_cons_loss,
         'auc': epoch_auc,
         'acc': epoch_acc
     }
@@ -151,7 +123,6 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
     model.eval()
     running_loss = 0.0
     running_cls_loss = 0.0
-    running_cons_loss = 0.0
     preds_all, labels_all = [], []
     
     with torch.no_grad():
@@ -163,7 +134,6 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
             
             running_loss += loss.item() * frames.size(0)
             running_cls_loss += losses['cls_loss'] * frames.size(0)
-            running_cons_loss += losses['incons_loss'] * frames.size(0)
             
             # 分类预测
             preds = torch.softmax(outputs['logits'], dim=1)[:, 1].detach().cpu().numpy()
@@ -173,14 +143,12 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
     # 计算指标
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
-    epoch_cons_loss = running_cons_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
     epoch_acc = accuracy_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
     
     return {
         'loss': epoch_loss,
         'cls_loss': epoch_cls_loss,
-        'incons_loss': epoch_cons_loss,
         'auc': epoch_auc,
         'acc': epoch_acc
     }
@@ -274,7 +242,7 @@ def main():
     
     train_viz = TrainVisualization(os.path.join(args.output, 'train_visualizations'))
     
-    criterion = BinaryFocalLoss(alpha=0.75, gamma=1)
+    criterion = BinaryFocalLoss(alpha=0.25, gamma=1)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
     
@@ -285,8 +253,6 @@ def main():
         # 如果训练已超过 70% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
         if epoch >= 0.7 * args.epochs:
             for param in model.dama.space_efficient[-1].parameters():
-                param.requires_grad = True
-            for param in model.tcm.vit.parameters():
                 param.requires_grad = True
             print("Unfreezing EfficientNet parameters...")
         
@@ -330,9 +296,8 @@ def main():
             lr=optimizer.param_groups[0]['lr']
         )
         
-        # 每两轮保存一次可视化结果
-        if (epoch+1) % 2 == 0:
-            train_viz.plot_all()
+        # 保存训练可视化
+        train_viz.save_metrics()
         
         print("="*50)
     
