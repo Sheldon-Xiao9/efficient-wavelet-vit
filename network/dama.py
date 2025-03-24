@@ -81,7 +81,7 @@ class DAMA(nn.Module):
             # 批处理帧
             for i in range(batch_frames.shape[1]):
                 frame_tensor = batch_frames[:, i].detach().requires_grad_(True)
-                if i % 2 == 0:
+                if i % 4 == 0:
                     # 使用checkpoint加速
                     mean_features = checkpoint(self._process_frame, frame_tensor, use_reentrant=False)
                     mean_fused = mean_features['fused']

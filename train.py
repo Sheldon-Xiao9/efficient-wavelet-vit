@@ -11,7 +11,7 @@ from tqdm import tqdm
 from torch.nn import functional as F
 # from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
-from sklearn.metrics import roc_auc_score, accuracy_score # type: ignore
+from sklearn.metrics import roc_auc_score, f1_score # type: ignore
 
 from network.model import DeepfakeDetector
 from config.data_loader import FaceForensicsLoader
@@ -50,11 +50,16 @@ def orthogonal_loss(space_feats, freq_feats):
     """
     正交约束损失
     """
+    _, feat_dim = space_feats.shape
     space_feats = F.normalize(space_feats, p=2, dim=1)
     freq_feats = F.normalize(freq_feats, p=2, dim=1)
-    loss = torch.sum(space_feats * freq_feats, dim=1)
-    return loss
-
+    
+    # 计算协方差矩阵并惩罚非对角线元素
+    cov = torch.mm(space_feats.T, freq_feats)  # [feat_dim, feat_dim]
+    diag_mask = torch.eye(feat_dim).to(cov.device)
+    off_diag = cov * (1 - diag_mask)
+    return torch.norm(off_diag, p='fro')**2 / (feat_dim*(feat_dim-1))
+    
 def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     """
     组合损失函数，由Focal Loss和正交约束组成
@@ -62,18 +67,17 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     logits = outputs['logits']
     labels = F.one_hot(labels, num_classes=2).float()
     
-    if epoch < 0.4 * max_epochs:
+    if epoch < 0.2 * max_epochs:
         cls_loss = criterion(logits, labels)
         return cls_loss, {
             'cls_loss': cls_loss.item(),
             'orth_loss': 0.0
         }
     else:
-        # 启用时序一致性损失
         cls_loss = criterion(logits, labels)
         # 正交约束
         loss_orth = orthogonal_loss(outputs['space'], outputs['freq'])
-        lambda_orth  = 0.001 * (epoch / max_epochs)
+        lambda_orth  = 0.1 * min(1.0, (epoch - 0.2 * max_epochs) / (0.5 * max_epochs))
     
     return cls_loss + lambda_orth * loss_orth, {
         'cls_loss': cls_loss.item(),
@@ -121,13 +125,13 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
-    epoch_acc = accuracy_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
+    epoch_f1 = f1_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
     
     return {
         'loss': epoch_loss,
         'cls_loss': epoch_cls_loss,
         'auc': epoch_auc,
-        'acc': epoch_acc
+        'f1': epoch_f1
     }
     
 def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_epochs=None):
@@ -155,7 +159,7 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
-    epoch_acc = accuracy_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
+    epoch_acc = f1_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
     
     return {
         'loss': epoch_loss,
@@ -261,9 +265,9 @@ def main():
     for epoch in range(args.epochs):
         start_time = time.time()
         
-        # 如果训练已超过 80% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
-        if epoch >= 0.8 * args.epochs:
-            for param in model.dama.space_efficient[-1].parameters():
+        # 如果训练已超过 60% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
+        if epoch >= 0.6 * args.epochs:
+            for param in model.dama.space_efficient.parameters():
                 param.requires_grad = True
             print("Unfreezing EfficientNet parameters...")
         
@@ -294,11 +298,11 @@ def main():
         print(f"Epoch {epoch+1}/{args.epochs}")
         print(f"Train Loss: {train_metrics['loss']:.4f} | "
               f"Train AUC: {train_metrics['auc']:.4f} | "
-              f"Train Accuracy: {train_metrics['acc']:.4f} | "
+              f"Train F1 Score: {train_metrics['f1']:.4f} | "
               f"Time: {epoch_time:.2f}s")
         print(f"Val Loss: {val_metrics['loss']:.4f} | "
               f"Val AUC: {val_metrics['auc']:.4f} | "
-              f"Val Accuracy: {val_metrics['acc']:.4f}")
+              f"Val F1 Score: {val_metrics['f1']:.4f}")
         
         train_viz.update(
             epoch=epoch,

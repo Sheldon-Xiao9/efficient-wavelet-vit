@@ -8,7 +8,9 @@ import numpy as np
 from torch.utils.data import DataLoader
 from torch.nn.functional import softmax
 
+from train import combined_loss
 from network.model import DeepfakeDetector
+from config.focal_loss import BinaryFocalLoss
 from config.transforms import get_transforms
 from config.data_loader import FaceForensicsLoader
 
@@ -33,6 +35,8 @@ def parse_args():
                         help="Which dataset split to use")
     parser.add_argument("--sample-index", "--i", type=int, default=None,
                         help="Specific sample index to test (optional)")
+    parser.add_argument("--max-epoch", "--mep", type=int, default=10, 
+                        help="Maximum number of epochs, the number is set to calculate different steps of loss")
     return parser.parse_args()
 
 def test_model(args):
@@ -153,6 +157,14 @@ def test_model(args):
             for key, value in outputs.items():
                 if isinstance(value, torch.Tensor):
                     print(f"  - {key}: {value.shape}")
+            print("="*50)
+            
+            # 计算损失
+            print("7. Testing loss calculation...")
+            criterion = BinaryFocalLoss(gamma=2.0, alpha=0.2)
+            loss, losses = combined_loss(outputs, labels, criterion, epoch=5, max_epochs=args.max_epoch)
+            print(f"Loss: {loss.item()}")
+            print(f"Losses: {losses}")
             print("="*50)
             
             # 打印结果
