@@ -159,13 +159,13 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
-    epoch_acc = f1_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
+    epoch_f1 = f1_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
     
     return {
         'loss': epoch_loss,
         'cls_loss': epoch_cls_loss,
         'auc': epoch_auc,
-        'acc': epoch_acc
+        'f1': epoch_f1
     }
     
 def main():
