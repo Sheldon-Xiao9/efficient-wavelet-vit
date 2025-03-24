@@ -72,7 +72,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
         # 启用时序一致性损失
         cls_loss = criterion(logits, labels)
         # 正交约束
-        loss_orth = orthogonal_loss(outputs['space_feats'], outputs['freq_feats'])
+        loss_orth = orthogonal_loss(outputs['space'], outputs['freq'])
         lambda_orth  = 0.01 * min(1.0, (epoch - 0.4 * max_epochs) / (0.6 * max_epochs))
     
     return cls_loss + lambda_orth * loss_orth, {
@@ -253,7 +253,7 @@ def main():
     
     train_viz = TrainVisualization(os.path.join(args.output, 'train_visualizations'))
     
-    criterion = BinaryFocalLoss(alpha=0.25, gamma=1)
+    criterion = BinaryFocalLoss(alpha=0.25, gamma=2)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
     
