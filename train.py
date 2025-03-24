@@ -52,7 +52,7 @@ def orthogonal_loss(space_feats, freq_feats):
     """
     space_feats = F.normalize(space_feats, p=2, dim=1)
     freq_feats = F.normalize(freq_feats, p=2, dim=1)
-    loss = torch.norm(torch.mm(space_feats.t(), freq_feats))**2
+    loss = torch.sum(space_feats * freq_feats, dim=1)
     return loss
 
 def combined_loss(outputs, labels, criterion, epoch, max_epochs):
@@ -73,7 +73,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
         cls_loss = criterion(logits, labels)
         # 正交约束
         loss_orth = orthogonal_loss(outputs['space'], outputs['freq'])
-        lambda_orth  = 0.01 * min(1.0, (epoch - 0.4 * max_epochs) / (0.6 * max_epochs))
+        lambda_orth  = 0.001 * (epoch / max_epochs)
     
     return cls_loss + lambda_orth * loss_orth, {
         'cls_loss': cls_loss.item(),
