@@ -40,12 +40,11 @@ class DeepfakeDetector(nn.Module):
             
         # 分类层
         self.classifier = nn.Sequential(
-            nn.Linear(dama_dim, 256),
+            nn.Linear(dama_dim, 64),
             nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(256, 2)
+            nn.Dropout(0.3),
+            nn.Linear(64, 1)
         )
-        
         
     def forward(self, x, batch_size, ablation):
         """

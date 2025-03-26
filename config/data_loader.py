@@ -17,7 +17,7 @@ class FaceForensicsLoader(Dataset):
                  frame_count=24,
                  transform=None,
                  compression='C23',
-                 methods=['Deepfakes', 'Face2Face', 'FaceSwap', 'NeuralTextures']):
+                 methods=['Deepfakes', 'Face2Face', 'FaceSwap', 'NeuralTextures', 'FaceShifter']):
         """
         初始化FaceForensicsLoader
         
@@ -93,26 +93,51 @@ class FaceForensicsLoader(Dataset):
             else:
                 raise Exception(f"Original video '{frames_dir}' not found")
         
-        # 收集伪造视频路径
-        fake_dirs = []
+        # 确定每种方法需要提取的样本数量
+        samples_per_method = len(real_dirs) // len(self.methods)
+        if samples_per_method <= 0:
+            raise ValueError(f"Invalid number of samples per method: {samples_per_method}")
+        
+        # 收集每种伪造方法的所有可用视频
+        method_videos = {}
         for method in self.methods:
             fake_dir = os.path.join(self.root, f'faceforensics-c23-processed/ff++/frames/{method}')
             if not os.path.exists(fake_dir):
                 raise FileNotFoundError(f"Fake videos directory '{fake_dir}' not found")
             
+            method_videos[method] = []
             for video_id in video_ids:
-                # 伪造视频帧的文件夹命名规则：<target>_<source>
                 target, source = video_id
                 frames_dir = os.path.join(fake_dir, f'{target}_{source}')
                 if os.path.exists(frames_dir):
-                    fake_dirs.append({
+                    method_videos[method].append({
                         'path': frames_dir,
                         'method': method,
                         'target': target,
                         'source': source
                     })
-                else:
-                    raise Exception(f"Fake video '{frames_dir}' not found")
+        
+        # 从每种方法中随机均匀提取样本
+        fake_dirs = []
+        for method, videos in method_videos.items():
+            # 如果该方法下的视频不足，全部使用
+            if len(videos) <= samples_per_method:
+                fake_dirs.extend(videos)
+            else:
+                # 随机选择指定数量的样本
+                selected = random.sample(videos, samples_per_method)
+                fake_dirs.extend(selected)
+        
+        # 打乱伪造视频的顺序，确保不同方法的视频混合在一起
+        random.shuffle(fake_dirs)
+        
+        print(f"Selected videos by method:")
+        method_counts = {}
+        for video in fake_dirs:
+            method_counts[video['method']] = method_counts.get(video['method'], 0) + 1
+        
+        for method, count in method_counts.items():
+            print(f"  - {method}: {count} videos")
         
         return real_dirs, fake_dirs
     

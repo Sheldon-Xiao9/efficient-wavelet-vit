@@ -68,7 +68,9 @@ class DAMA(nn.Module):
     def forward(self, x, batch_size=16):
         # x: [B, K, C, H, W]
         B, K, C, H, W = x.shape
-        mean_features = torch.zeros(B, self.dim, device=x.device)
+        mean_fused = torch.zeros(B, self.dim, device=x.device)
+        mean_space = torch.zeros(B, self.dim, device=x.device)
+        mean_freq = torch.zeros(B, self.dim, device=x.device)
         
         # 分批处理视频帧
         for start_idx in range(0, K, batch_size):
@@ -79,20 +81,21 @@ class DAMA(nn.Module):
             batch_frames = x[:, start_idx:end_idx] # [B, batch_size, C, H, W]
 
             # 批处理帧
-            for i in range(batch_frames.shape[1]):
-                frame_tensor = batch_frames[:, i].detach().requires_grad_(True)
-                if i % 4 == 0:
-                    # 使用checkpoint加速
-                    mean_features = checkpoint(self._process_frame, frame_tensor, use_reentrant=False)
-                    mean_fused = mean_features['fused']
-                    mean_space = mean_features['space']
-                    mean_freq = mean_features['freq']
-                else:
-                    mean_features = self._process_frame(frame_tensor)
-                    mean_fused += mean_features['fused']
-                    mean_space += mean_features['space']
-                    mean_freq += mean_features['freq']
+            features = self._process_frame(batch_frames.flatten(0,1))
             torch.cuda.empty_cache()
+            
+            features_fused = features['fused'].view(B, -1, self.dim)
+            mean_fused += features_fused.sum(dim=1)
+            
+            features_space = features['space'].view(B, -1, self.dim)
+            mean_space += features_space.sum(dim=1)
+            
+            features_freq = features['freq'].view(B, -1, self.dim)
+            mean_freq += features_freq.sum(dim=1)
+            
+        mean_fused /= K # 连接所有批次的特征
+        mean_space /= K
+        mean_freq /= K
 
         # 连接所有批次的特征
         return {

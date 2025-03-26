@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
+from torch.nn import BCEWithLogitsLoss
 from torch.nn import functional as F
 # from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
@@ -65,7 +66,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     组合损失函数，由Focal Loss和正交约束组成
     """
     logits = outputs['logits']
-    labels = F.one_hot(labels, num_classes=2).float()
+    labels = labels.view(-1, 1).float()
     
     if epoch < 0.2 * max_epochs:
         cls_loss = criterion(logits, labels)
@@ -257,9 +258,9 @@ def main():
     
     train_viz = TrainVisualization(os.path.join(args.output, 'train_visualizations'))
     
-    criterion = BinaryFocalLoss(alpha=0.25, gamma=2)
+    criterion = BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-7)
     
     best_val_auc = 0.0
     for epoch in range(args.epochs):
@@ -267,7 +268,8 @@ def main():
         
         # 如果训练已超过 60% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
         if epoch >= 0.6 * args.epochs:
-            for param in model.dama.space_efficient.parameters():
+            base_model = model.module if args.multi_gpu else model
+            for param in base_model.sfe.space_efficient.parameters():
                 param.requires_grad = True
             print("Unfreezing EfficientNet parameters...")
         

@@ -124,7 +124,7 @@ class EvalVisualization:
         plt.savefig(os.path.join(self.output_path, 'orth_vs_prediction.png'))
         plt.close()
     
-    def plot_metrics(self, metrix, labels: np.ndarray, predictions: np.ndarray, orth_loss: np.ndarray) -> None:
+    def plot_metrics(self, metrix, labels: np.ndarray, predictions: np.ndarray, orth_loss = None) -> None:
         """生成所有评估指标的可视化"""
         self.plot_confusion_matrix(metrix['conf_matrix'])
         self.plot_roc_curve(labels, predictions, metrix['auc'])

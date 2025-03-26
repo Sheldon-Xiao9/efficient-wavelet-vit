@@ -16,10 +16,7 @@ class BinaryFocalLoss(nn.Module):
     """
     def __init__(self, alpha=0.25, gamma=2, reduction="mean"):
         super(BinaryFocalLoss, self).__init__()
-        if alpha is not None:
-            self.alpha = torch.tensor([alpha, 1 - alpha], dtype=torch.float32)
-        else:
-            self.alpha = None
+        self.alpha = alpha
         self.gamma = gamma
         self.reduction = reduction
         
@@ -27,25 +24,24 @@ class BinaryFocalLoss(nn.Module):
         """
         计算二分类 Focal Loss
         
-        :param input: 模型输出的logits，形状为 (B, 2)，B 为 batch size，第二维度为正负类别
+        :param input: 模型输出的logits，形状为 (B, 1)，B 为 batch size，第二维度为正负类别
         :type input: torch.Tensor
-        :param target: 真实标签，形状为 (B, 2)，B 为 batch size，第二维度为正负类别
+        :param target: 真实标签，形状为 (B, 1)，B 为 batch size，第二维度为正负类别
         """
-        probs = F.softmax(input, dim=1)
+        p = torch.sigmoid(input)
         
-        # 计算真实类别的概率
-        pt = torch.sum(target * probs, dim=1)
+        # 计算交叉熵项
+        ce_loss = F.binary_cross_entropy(p, target, reduction="none")
         
-        logpt = -torch.log(pt + 1e-8)
-        factor = (1 - pt) ** self.gamma
-        if self.alpha is not None and self.alpha.device != input.device:
-            # alpha[0]: 正类样本的权重
-            # alpha[1]: 负类样本的权重
-            alpha_weight = torch.sum(self.alpha.to(input.device) * target, dim=1)
-            focal_loss = factor * alpha_weight * logpt
-        else:
-            focal_loss = factor * logpt
-            print(f"alpha lost: {focal_loss}")
+        # 计算调制因子 (1 - p_t)^gamma
+        p_t = p * target + (1 - p) * (1 - target)
+        modulating_factor = (1 - p_t) ** self.gamma
+        
+        # 动态分配 alpha 权重
+        alpha_weight = self.alpha * target + (1 - self.alpha) * (1 - target)
+        
+        # 总损失
+        focal_loss = alpha_weight * modulating_factor * ce_loss
         
         # 计算损失
         if self.reduction == "mean":

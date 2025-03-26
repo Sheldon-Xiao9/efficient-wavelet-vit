@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 from config.data_loader import FaceForensicsLoader, CelebDFLoader
 from config.transforms import get_transforms
+from config.focal_loss import BinaryFocalLoss
 from network.model import DeepfakeDetector
 from utils.visualization import EvalVisualization
 
@@ -95,14 +96,13 @@ def get_dataloader(args):
         pin_memory=True
     )
     
-def evaluate(model, dataloader, device="cuda"):
+def evaluate(model, dataloader, device="cuda", args=None):
     """评估模型"""
     model.eval()
     all_preds = []
     all_labels = []
-    all_cons_scores = []
     test_loss = 0.0
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = BinaryFocalLoss(alpha=0.2, gamma=2)
     
     print("Evaluating model on the test set...")
     
@@ -111,9 +111,9 @@ def evaluate(model, dataloader, device="cuda"):
             frames = frames.to(device)
             labels = labels.to(device)
             
-            outputs = model(frames)
+            outputs = model(frames, batch_size=args.batch_size, ablation='dynamic')
             
-            loss = criterion(outputs['logits'], labels)
+            loss, _ = criterion(outputs['logits'], labels)
             test_loss += loss.item() * frames.size(0)
             
             # 收集预测结果
@@ -121,8 +121,6 @@ def evaluate(model, dataloader, device="cuda"):
             all_preds.extend(probs[:, 1].detach().cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
             
-            if 'tcm_consistency' in outputs:
-                all_cons_scores.extend(outputs['tcm_consistency'].detach().cpu().numpy())
     
     test_loss /= len(dataloader.dataset)
     
@@ -139,7 +137,7 @@ def evaluate(model, dataloader, device="cuda"):
         'conf_matrix': confusion_matrix(all_labels, binary_preds)
     }
     
-    return metrics, np.array(all_preds), np.array(all_labels), np.array(all_cons_scores)
+    return metrics, np.array(all_preds), np.array(all_labels)
 
 def main():
     args = parse_args()
@@ -160,7 +158,7 @@ def main():
     
     # 评估模型
     start_time = time.time()
-    metrics, preds, labels, cons_scores = evaluate(model, dataloader, device=device)
+    metrics, preds, labels = evaluate(model, dataloader, device=device, args=args)
     eval_time = time.time() - start_time
     
     # 输出评估结果
@@ -193,7 +191,7 @@ def main():
     if args.visualize:
         print("Generating evaluation visualizations...")
         viz = EvalVisualization(args.output)
-        viz.plot_metrics(metrics, labels, preds, cons_scores)
+        viz.plot_metrics(metrics, labels, preds)
         print(f"Saved visualizations to {args.output}")
 
 if __name__ == "__main__":

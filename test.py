@@ -159,19 +159,28 @@ def test_model(args):
                     print(f"  - {key}: {value.shape}")
             print("="*50)
             
+            # 打印输出
+            print("Model output logits: ")
+            print(outputs['logits'])
+            print("Labels:")
+            print(labels)
+            print("="*50)
+            
             # 计算损失
             print("7. Testing loss calculation...")
-            criterion = BinaryFocalLoss(gamma=2.0, alpha=0.2)
+            criterion = torch.nn.BCEWithLogitsLoss()
             loss, losses = combined_loss(outputs, labels, criterion, epoch=5, max_epochs=args.max_epoch)
             print(f"Loss: {loss.item()}")
             print(f"Losses: {losses}")
             print("="*50)
             
             # 打印结果
-            probs = softmax(outputs['logits'], dim=1)
+            fake_probs = torch.sigmoid(outputs['logits'].squeeze())
             print(f"Predicted probabilities: ")
             for i in range(len(labels)):
-                print(f"  - Sample {i+1}: Real: {probs[i, 0].item():.4f}, Fake: {probs[i, 1].item():.4f}")
+                fake_prob = fake_probs[i].item()
+                real_prob = 1.0 - fake_prob
+                print(f"  - Sample {i+1}: Real: {real_prob:.4f}, Fake: {fake_prob:.4f}")
             print("="*50)
             
             end_time = time.time()
