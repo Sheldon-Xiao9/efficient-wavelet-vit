@@ -78,7 +78,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
         cls_loss = criterion(logits, labels)
         # 正交约束
         loss_orth = orthogonal_loss(outputs['space'], outputs['freq'])
-        lambda_orth  = 0.1 * min(1.0, (epoch - 0.2 * max_epochs) / (0.5 * max_epochs))
+        lambda_orth  = min(1.0, (epoch - 0.2 * max_epochs) / (0.5 * max_epochs))
     
     return cls_loss + lambda_orth * loss_orth, {
         'cls_loss': cls_loss.item(),

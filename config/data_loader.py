@@ -75,7 +75,7 @@ class FaceForensicsLoader(Dataset):
         ``fake_videos``
             包含伪造视频帧路径、方法和标签的字典列表
         """
-        original_dir = os.path.join(self.root, f'faceforensics-c23-processed/ff++/frames/original')
+        original_dir = os.path.join(self.root, f'faceforensics-c23-processed/ff/ff++/frames/original')
         if not os.path.exists(original_dir):
             raise FileNotFoundError(f"Original video frames directory '{original_dir}' not found")
         
@@ -101,7 +101,7 @@ class FaceForensicsLoader(Dataset):
         # 收集每种伪造方法的所有可用视频
         method_videos = {}
         for method in self.methods:
-            fake_dir = os.path.join(self.root, f'faceforensics-c23-processed/ff++/frames/{method}')
+            fake_dir = os.path.join(self.root, f'faceforensics-c23-processed/ff/ff++/frames/{method}')
             if not os.path.exists(fake_dir):
                 raise FileNotFoundError(f"Fake videos directory '{fake_dir}' not found")
             
