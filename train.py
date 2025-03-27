@@ -264,6 +264,10 @@ def main():
     
     best_val_auc = 0.0
     for epoch in range(args.epochs):
+        print(f"\n{'='*50}\nEpoch {epoch+1}/{args.epochs}\n{'='*50}")
+        print(f"Resampling fake videos...")
+        train_dataset.resample_fake_videos(epoch, args.epochs)
+        
         start_time = time.time()
         
         # 如果训练已超过 60% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
