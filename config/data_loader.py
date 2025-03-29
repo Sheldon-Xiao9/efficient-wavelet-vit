@@ -187,9 +187,9 @@ class FaceForensicsLoader(Dataset):
                 if len(videos) <= samples_per_method:
                     fake_dirs.extend(videos)
                 else:
-                    # 随机选择指定数量的样本
-                    selected = random.sample(videos, samples_per_method)
-                    fake_dirs.extend(selected)
+                    # 取前 samples_per_method 个视频
+                    sorted_videos = sorted(videos, key=lambda x: x['key'])
+                    fake_dirs.extend(sorted_videos[:samples_per_method])
             # 验证集保持固定顺序
             fake_dirs.sort(key=lambda x: x['key'])
             
