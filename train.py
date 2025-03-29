@@ -270,12 +270,12 @@ def main():
     for epoch in range(args.epochs):
         print(f"\n{'='*50}\nEpoch {epoch+1}/{args.epochs}\n{'='*50}")
         
+        print(f"Resampling fake videos...")
+        train_dataset.resample_fake_videos(epoch, args.epochs)
+        
         # 每轮开始前恢复验证集到原始状态
         val_dataset.fake_videos = copy.deepcopy(val_fake_backup)
         val_dataset.real_videos = copy.deepcopy(val_real_backup)
-        
-        print(f"Resampling fake videos...")
-        train_dataset.resample_fake_videos(epoch, args.epochs)
         
         start_time = time.time()
         
