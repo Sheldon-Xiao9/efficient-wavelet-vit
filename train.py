@@ -6,6 +6,7 @@ import os
 import time
 import copy
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
@@ -13,7 +14,7 @@ from torch.nn import BCEWithLogitsLoss
 from torch.nn import functional as F
 # from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
-from sklearn.metrics import roc_auc_score, f1_score # type: ignore
+from sklearn.metrics import roc_auc_score, f1_score, precision_recall_curve # type: ignore
 
 from network.model import DeepfakeDetector
 from config.data_loader import FaceForensicsLoader
@@ -126,7 +127,10 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
-    epoch_f1 = f1_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
+    precision, recall, thresholds = precision_recall_curve(labels_all, preds_all)
+    f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)
+    best_threshold = thresholds[np.argmax(f1_scores)]
+    epoch_f1 = f1_score(labels_all, (np.array(preds_all) >= best_threshold).astype(int))
     
     return {
         'loss': epoch_loss,
@@ -160,13 +164,16 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
-    epoch_f1 = f1_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
+    precision, recall, thresholds = precision_recall_curve(labels_all, preds_all)
+    f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)
+    best_threshold = thresholds[np.argmax(f1_scores)]
+    val_f1 = f1_score(labels_all, (np.array(preds_all) >= best_threshold).astype(int))
     
     return {
         'loss': epoch_loss,
         'cls_loss': epoch_cls_loss,
         'auc': epoch_auc,
-        'f1': epoch_f1
+        'f1': val_f1
     }
     
 def main():
@@ -258,7 +265,11 @@ def main():
     
     train_viz = TrainVisualization(os.path.join(args.output, 'train_visualizations'))
     
-    criterion = BCEWithLogitsLoss()
+    real_count = len(train_dataset.real_videos)
+    fake_count = len(train_dataset.fake_videos)
+    alpha = torch.tensor([fake_count / (real_count + fake_count)]).to(device)
+    
+    criterion = BinaryFocalLoss(alpha=alpha, gamma=2)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-7)
     

@@ -93,8 +93,7 @@ def get_transforms():
         FaceAlignTransform(margin=20),
         transforms.Resize(450),
         transforms.CenterCrop(224),
-        transforms.RandomHorizontalFlip(),
-        transforms.ColorJitter(brightness=0.05, contrast=0.05),
+        transforms.ColorJitter(brightness=0.01, contrast=0.01),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
