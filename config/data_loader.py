@@ -53,6 +53,9 @@ class FaceForensicsLoader(Dataset):
         # 加载视频位置
         self.real_videos, self.fake_videos = self._load_frames_dirs(self.methods)
         
+        # 用于记录原始伪造视频，防止验证集视频被重复采样
+        self.original_fake_videos = list(self.fake_videos)
+        
         print(f"Loaded {len(self.real_videos)} real videos and {len(self.fake_videos)} fake videos")
         
     def __len__(self):
@@ -185,7 +188,6 @@ class FaceForensicsLoader(Dataset):
         fixed_sample_ratio = max(0.0, 1.0 - progress_ratio)
         novelty_ratio = min(5.0, 1.0 + 4.0 * progress_ratio)
         
-        print(f"\nEpoch {epoch}/{max_epoch}:")
         print(f"  - Fixed sample ratio: {fixed_sample_ratio}")
         print(f"  - Novelty ratio: {novelty_ratio}")
         

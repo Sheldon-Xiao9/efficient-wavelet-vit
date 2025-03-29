@@ -113,7 +113,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
         running_cls_loss += losses['cls_loss'] * frames.size(0)
         
         # 分类预测
-        preds = torch.softmax(outputs['logits'], dim=1)[:, 1].detach().cpu().numpy()
+        preds = torch.sigmoid(outputs['logits']).squeeze(1).detach().cpu().numpy()
         preds_all.extend(preds)
         labels_all.extend(labels.cpu().numpy())
         
@@ -151,7 +151,7 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
             running_cls_loss += losses['cls_loss'] * frames.size(0)
             
             # 分类预测
-            preds = torch.softmax(outputs['logits'], dim=1)[:, 1].detach().cpu().numpy()
+            preds = torch.sigmoid(outputs['logits']).squeeze(1).detach().cpu().numpy()
             preds_all.extend(preds)
             labels_all.extend(labels.cpu().numpy())
     
@@ -264,6 +264,11 @@ def main():
     best_val_auc = 0.0
     for epoch in range(args.epochs):
         print(f"\n{'='*50}\nEpoch {epoch+1}/{args.epochs}\n{'='*50}")
+        
+        # 确保 val_dataset中的 fake_videos是原始的
+        if hasattr(val_dataset, 'original_fake_videos'):
+            val_dataset.fake_videos = list(val_dataset.original_fake_videos)
+        
         print(f"Resampling fake videos...")
         train_dataset.resample_fake_videos(epoch, args.epochs)
         
