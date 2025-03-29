@@ -268,7 +268,7 @@ def main():
     
     best_val_auc = 0.0
     for epoch in range(args.epochs):
-        print(f"\n{'='*50}\nEpoch {epoch+1}/{args.epochs}\n{'='*50}")
+        print(f"\nEpoch {epoch+1}/{args.epochs}\n{'='*50}")
         
         print(f"Resampling fake videos...")
         train_dataset.resample_fake_videos(epoch, args.epochs)
@@ -276,6 +276,13 @@ def main():
         # 每轮开始前恢复验证集到原始状态
         val_dataset.fake_videos = copy.deepcopy(val_fake_backup)
         val_dataset.real_videos = copy.deepcopy(val_real_backup)
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=True
+        )
         
         start_time = time.time()
         
