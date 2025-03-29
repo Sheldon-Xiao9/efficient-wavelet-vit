@@ -4,6 +4,7 @@ mp.set_start_method('spawn', force=True)
 import argparse
 import os
 import time
+import copy
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -228,6 +229,10 @@ def main():
         pin_memory=True
     )
     
+    # 备份验证集视频
+    val_fake_backup = copy.deepcopy(val_dataset.fake_videos)
+    val_real_backup = copy.deepcopy(val_dataset.real_videos)
+    
     print(f"Train dataset length: {len(train_dataset)}")
     print(f"Validation dataset length: {len(val_dataset)}")
     print("="*50)
@@ -265,9 +270,9 @@ def main():
     for epoch in range(args.epochs):
         print(f"\n{'='*50}\nEpoch {epoch+1}/{args.epochs}\n{'='*50}")
         
-        # 确保 val_dataset中的 fake_videos是原始的
-        if hasattr(val_dataset, 'original_fake_videos'):
-            val_dataset.fake_videos = list(val_dataset.original_fake_videos)
+        # 每轮开始前恢复验证集到原始状态
+        val_dataset.fake_videos = copy.deepcopy(val_fake_backup)
+        val_dataset.real_videos = copy.deepcopy(val_real_backup)
         
         print(f"Resampling fake videos...")
         train_dataset.resample_fake_videos(epoch, args.epochs)
