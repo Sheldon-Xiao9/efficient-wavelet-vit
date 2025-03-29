@@ -266,6 +266,9 @@ def main():
     for epoch in range(args.epochs):
         print(f"\nEpoch {epoch+1}/{args.epochs}\n{'='*50}")
         
+        if hasattr(val_dataset, 'original_fake_videos'):
+            val_dataset.fake_videos = copy.deepcopy(val_dataset.original_fake_videos)
+        
         print(f"Resampling fake videos...")
         train_dataset.resample_fake_videos(epoch, args.epochs)
         

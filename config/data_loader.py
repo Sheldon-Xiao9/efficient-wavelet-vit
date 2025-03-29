@@ -182,7 +182,7 @@ class FaceForensicsLoader(Dataset):
                             'source': source,
                             'key': key
                         })
-            for method, videos in method_videos.items():
+            for key, videos in method_videos.items():
                 # 如果该方法下的视频不足，全部使用
                 if len(videos) <= samples_per_method:
                     fake_dirs.extend(videos)
@@ -192,6 +192,8 @@ class FaceForensicsLoader(Dataset):
                     fake_dirs.extend(selected)
             # 验证集保持固定顺序
             fake_dirs.sort(key=lambda x: x['key'])
+            
+            self.original_fake_videos = fake_dirs.copy()
         
         return real_dirs, fake_dirs
     
@@ -204,6 +206,15 @@ class FaceForensicsLoader(Dataset):
         :param max_epoch: 最大训练轮次
         :type max_epoch: int
         """
+        # 验证集直接返回，不进行重采样
+        if self.split != 'train':
+            print(f"  - {self.split.capitalize()} set uses fixed samples")
+            
+            # 恢复到原始状态（如果有备份）
+            if hasattr(self, 'original_fake_videos'):
+                self.fake_videos = self.original_fake_videos.copy()
+            return
+        
         self.current_epoch = epoch
         samples_per_method = len(self.real_videos) // len(self.methods)
         
