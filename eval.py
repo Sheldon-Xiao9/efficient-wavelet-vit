@@ -117,7 +117,7 @@ def evaluate(model, dataloader, device="cuda", args=None):
             test_loss += loss.item() * frames.size(0)
             
             # 收集预测结果
-            probs = torch.softmax(outputs['logits'], dim=-1)
+            probs = torch.sigmoid(outputs['logits']).detach().cpu().numpy()
             all_preds.extend(probs[:, 1].detach().cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
             

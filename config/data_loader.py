@@ -137,30 +137,58 @@ class FaceForensicsLoader(Dataset):
                 })
                 self.video_usage_counts[f"{method}_{target}_{source}"] = 0
         
-        # 从每种方法中随机均匀提取样本
-        fake_dirs = []
-        method_counts = {method: 0 for method in self.methods}
-        for video_id in list(method_videos.keys()):
-            available_videos = method_videos[video_id]
-            available_videos.sort(key=lambda x: method_counts[x['method']])
-            selected_videos = available_videos[0]
-            fake_dirs.append(selected_videos)
-            method_counts[selected_videos['method']] += 1
+        if self.split == 'train':
+            # 从每种方法中随机均匀提取样本
+            fake_dirs = []
+            method_counts = {method: 0 for method in self.methods}
+            for video_id in list(method_videos.keys()):
+                available_videos = method_videos[video_id]
+                available_videos.sort(key=lambda x: method_counts[x['method']])
+                selected_videos = available_videos[0]
+                fake_dirs.append(selected_videos)
+                method_counts[selected_videos['method']] += 1
+                
+                # 记录初始选择的视频使用次数加1
+                key = f"{selected_videos['method']}_{selected_videos['key']}"
+                self.video_usage_counts[key] += 1
             
-            # 记录初始选择的视频使用次数加1
-            key = f"{selected_videos['method']}_{selected_videos['key']}"
-            self.video_usage_counts[key] += 1
-        
-        # 打乱伪造视频的顺序，确保不同方法的视频混合在一起
-        random.shuffle(fake_dirs)
-        
-        print(f"Selected videos by method:")
-        method_counts = {}
-        for video in fake_dirs:
-            method_counts[video['method']] = method_counts.get(video['method'], 0) + 1
-        
-        for method, count in method_counts.items():
-            print(f"  - {method}: {count} videos")
+            # 打乱伪造视频的顺序，确保不同方法的视频混合在一起
+            random.shuffle(fake_dirs)
+            
+            print(f"Selected videos by method:")
+            method_counts = {}
+            for video in fake_dirs:
+                method_counts[video['method']] = method_counts.get(video['method'], 0) + 1
+            
+            for method, count in method_counts.items():
+                print(f"  - {method}: {count} videos")
+        else:
+            # 验证和测试阶段，使用所有伪造视频
+            fake_dirs = []
+            method_videos[method] = []
+            for method in self.methods:
+                fake_dir = os.path.join(self.root, f'faceforensics-c23-processed/ff/ff++/frames/{method}')
+                for video_id in self.split_ids:
+                    target, source = video_id
+                    key = f"{target}_{source}"
+                    frames_dir = os.path.join(fake_dir, key)
+                    if os.path.exists(frames_dir):
+                        method_videos[key].append({
+                            'path': frames_dir,
+                            'method': method,
+                            'target': target,
+                            'source': source
+                        })
+            for method, videos in method_videos.items():
+                # 如果该方法下的视频不足，全部使用
+                if len(videos) <= samples_per_method:
+                    fake_dirs.extend(videos)
+                else:
+                    # 随机选择指定数量的样本
+                    selected = random.sample(videos, samples_per_method)
+                    fake_dirs.extend(selected)
+            # 验证集保持固定顺序
+            fake_dirs.sort(key=lambda x: x['key'])
         
         return real_dirs, fake_dirs
     
@@ -275,8 +303,6 @@ class FaceForensicsLoader(Dataset):
         frame_files = sorted(glob.glob(os.path.join(frames_dir, '*.png')))
         if not frame_files:
             frame_files = sorted(glob.glob(os.path.join(frames_dir, '*.jpg')))
-        if not frame_files:
-            raise ValueError(f"No frame images found in '{frames_dir}'")
         
         # 如果帧数超过需要的数量，选择均匀间隔的帧
         if len(frame_files) > self.frame_count:

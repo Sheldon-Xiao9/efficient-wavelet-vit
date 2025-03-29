@@ -228,11 +228,7 @@ def main():
         num_workers=0,
         pin_memory=True
     )
-    
-    # 备份验证集视频
-    val_fake_backup = copy.deepcopy(val_dataset.fake_videos)
-    val_real_backup = copy.deepcopy(val_dataset.real_videos)
-    
+   
     print(f"Train dataset length: {len(train_dataset)}")
     print(f"Validation dataset length: {len(val_dataset)}")
     print("="*50)
@@ -273,23 +269,11 @@ def main():
         print(f"Resampling fake videos...")
         train_dataset.resample_fake_videos(epoch, args.epochs)
         
-        # 每轮开始前恢复验证集到原始状态
-        val_dataset.fake_videos = copy.deepcopy(val_fake_backup)
-        val_dataset.real_videos = copy.deepcopy(val_real_backup)
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=0,
-            pin_memory=True
-        )
-        
         start_time = time.time()
         
         # 如果训练已超过 60% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
         if epoch >= 0.6 * args.epochs:
-            base_model = model.module if args.multi_gpu else model
-            for param in base_model.sfe.space_efficient.parameters():
+            for param in model.sfe.space_efficient.parameters():
                 param.requires_grad = True
             print("Unfreezing EfficientNet parameters...")
         
