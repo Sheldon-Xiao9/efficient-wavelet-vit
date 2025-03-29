@@ -165,7 +165,7 @@ class FaceForensicsLoader(Dataset):
         else:
             # 验证和测试阶段，使用所有伪造视频
             fake_dirs = []
-            method_videos[method] = []
+            method_videos = {}
             for method in self.methods:
                 fake_dir = os.path.join(self.root, f'faceforensics-c23-processed/ff/ff++/frames/{method}')
                 for video_id in self.split_ids:
@@ -173,6 +173,8 @@ class FaceForensicsLoader(Dataset):
                     key = f"{target}_{source}"
                     frames_dir = os.path.join(fake_dir, key)
                     if os.path.exists(frames_dir):
+                        if key not in method_videos:
+                            method_videos[key] = []
                         method_videos[key].append({
                             'path': frames_dir,
                             'method': method,
