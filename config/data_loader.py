@@ -177,7 +177,8 @@ class FaceForensicsLoader(Dataset):
                             'path': frames_dir,
                             'method': method,
                             'target': target,
-                            'source': source
+                            'source': source,
+                            'key': key
                         })
             for method, videos in method_videos.items():
                 # 如果该方法下的视频不足，全部使用
