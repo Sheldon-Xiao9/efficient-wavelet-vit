@@ -103,8 +103,6 @@ class FaceForensicsLoader(Dataset):
         if samples_per_method <= 0:
             raise ValueError(f"Invalid number of samples per method: {samples_per_method}")
         
-        self.all_fake_videos_by_method = {method: [] for method in self.methods}
-        
         # 收集每种伪造方法的所有可用视频
         method_videos = {}
         for method in self.methods:
@@ -112,9 +110,10 @@ class FaceForensicsLoader(Dataset):
             if not os.path.exists(fake_dir):
                 raise FileNotFoundError(f"Fake videos directory '{fake_dir}' not found")
             
+            method_videos[method] = []
             for video_id in video_ids:
                 target, source = video_id
-                key = f"{target}_{source}"
+                key = f'{target}_{source}'
                 frames_dir = os.path.join(fake_dir, f'{target}_{source}')
                 if os.path.exists(frames_dir):
                     if key not in method_videos:
@@ -123,169 +122,31 @@ class FaceForensicsLoader(Dataset):
                         'path': frames_dir,
                         'method': method,
                         'target': target,
-                        'source': source,
-                        'key': key
+                        'source': source
                     })
-                
-                # 记录视频使用次数
-                self.all_fake_videos_by_method[method].append({
-                    'path': frames_dir,
-                    'method': method,
-                    'target': target,
-                    'source': source,
-                    'key': key
-                })
-                self.video_usage_counts[f"{method}_{target}_{source}"] = 0
         
-        if self.split == 'train':
-            # 从每种方法中随机均匀提取样本
-            fake_dirs = []
-            method_counts = {method: 0 for method in self.methods}
-            for video_id in list(method_videos.keys()):
-                available_videos = method_videos[video_id]
-                available_videos.sort(key=lambda x: method_counts[x['method']])
-                selected_videos = available_videos[0]
-                fake_dirs.append(selected_videos)
-                method_counts[selected_videos['method']] += 1
-                
-                # 记录初始选择的视频使用次数加1
-                key = f"{selected_videos['method']}_{selected_videos['key']}"
-                self.video_usage_counts[key] += 1
-            
-            # 打乱伪造视频的顺序，确保不同方法的视频混合在一起
-            random.shuffle(fake_dirs)
-            
-            print(f"Selected videos by method:")
-            method_counts = {}
-            for video in fake_dirs:
-                method_counts[video['method']] = method_counts.get(video['method'], 0) + 1
-            
-            for method, count in method_counts.items():
-                print(f"  - {method}: {count} videos")
-        else:
-            # 验证和测试阶段，使用所有伪造视频
-            fake_dirs = []
-            method_videos = {}
-            for method in self.methods:
-                fake_dir = os.path.join(self.root, f'faceforensics-c23-processed/ff/ff++/frames/{method}')
-                for video_id in self.split_ids:
-                    target, source = video_id
-                    key = f"{target}_{source}"
-                    frames_dir = os.path.join(fake_dir, key)
-                    if os.path.exists(frames_dir):
-                        if key not in method_videos:
-                            method_videos[key] = []
-                        method_videos[key].append({
-                            'path': frames_dir,
-                            'method': method,
-                            'target': target,
-                            'source': source,
-                            'key': key
-                        })
-            for key, videos in method_videos.items():
-                # 如果该方法下的视频不足，全部使用
-                if len(videos) <= samples_per_method:
-                    fake_dirs.extend(videos)
-                else:
-                    # 取前 samples_per_method 个视频
-                    sorted_videos = sorted(videos, key=lambda x: x['key'])
-                    fake_dirs.extend(sorted_videos[:samples_per_method])
-            # 验证集保持固定顺序
-            fake_dirs.sort(key=lambda x: x['key'])
-            
-            self.original_fake_videos = fake_dirs.copy()
-        
-        return real_dirs, fake_dirs
-    
-    def resample_fake_videos(self, epoch, max_epoch):
-        """
-        根据当前训练轮次重新抽样伪造视频
-        
-        :param epoch: 当前训练轮次
-        :type epoch: int
-        :param max_epoch: 最大训练轮次
-        :type max_epoch: int
-        """
-        # 验证集直接返回，不进行重采样
-        if self.split != 'train':
-            print(f"  - {self.split.capitalize()} set uses fixed samples")
-            
-            # 恢复到原始状态（如果有备份）
-            if hasattr(self, 'original_fake_videos'):
-                self.fake_videos = self.original_fake_videos.copy()
-            return
-        
-        self.current_epoch = epoch
-        samples_per_method = len(self.real_videos) // len(self.methods)
-        
-        early_stage = 0.4 # 前40%的训练轮次使用较为固定的样本
-        mid_stage = 0.7 # 40%-70%的训练轮次逐渐增加样本多样性
-        
-        progress_ratio = min(1.0, epoch / (max_epoch * mid_stage))
-        
-        # 前期偏向使用固定样本，后期偏向使用新样本
-        fixed_sample_ratio = max(0.0, 1.0 - progress_ratio)
-        novelty_ratio = min(5.0, 1.0 + 4.0 * progress_ratio)
-        
-        print(f"  - Fixed sample ratio: {fixed_sample_ratio}")
-        print(f"  - Novelty ratio: {novelty_ratio}")
-        
-        # 如果是早期阶段且固定样本比例高，则不更新样本
-        if epoch < max_epoch * early_stage and fixed_sample_ratio > 0.8:
-            print("  - Early stage, using fixed samples")
-            return
-        
-        new_fake_dirs = []
+        # 从每种方法中随机均匀提取样本
+        fake_dirs = []
         method_counts = {method: 0 for method in self.methods}
-        
-        # 重新抽样伪造视频
-        for method in self.methods:
-            available_videos = self.all_fake_videos_by_method[method]
-            if not available_videos:
-                continue
-            
-            # 根据使用频率为每个视频计算权重
-            videos_weights = []
-            for video in available_videos:
-                video_key = f"{method}_{video['key']}"
-                usage_count = self.video_usage_counts.get(video_key, 0)
-                # 计算视频权重，使用次数为0的样本权重为1
-                weight = 1.0 / (usage_count + 1) * (novelty_ratio if usage_count == 0 else 1.0)
-                videos_weights.append((video, weight))
-                
-            # 根据权重随机选择样本
-            weights = [w for _, w in videos_weights]
-            total_weight = sum(weights)
-            probs = [w / total_weight for w in weights]
-            
-            selected_indices = np.random.choice(
-                len(available_videos),
-                size=samples_per_method,
-                replace=True,
-                p=probs
-            )
-            
-            for idx in selected_indices:
-                video = available_videos[idx]
-                new_fake_dirs.append(video)
-                method_counts[method] += 1
-                
-                # 更新视频使用次数
-                key = f"{method}_{video['key']}"
-                self.video_usage_counts[key] = self.video_usage_counts.get(key, 0) + 1
+        for video_id, methods_available in method_videos.items():
+            # 优先选择样本量少的方法
+            methods_available.sort(key=lambda x: method_counts[x['method']])
+            selected = methods_available[0]
+            fake_dirs.append(selected)
+            method_counts[selected['method']] += 1
         
         # 打乱伪造视频的顺序，确保不同方法的视频混合在一起
-        random.shuffle(new_fake_dirs)
-        self.fake_videos = new_fake_dirs
+        random.shuffle(fake_dirs)
         
-        print(f"Resampled videos by method for epoch {epoch+1}:")
+        print(f"Selected videos by method:")
+        method_counts = {}
+        for video in fake_dirs:
+            method_counts[video['method']] = method_counts.get(video['method'], 0) + 1
+        
         for method, count in method_counts.items():
             print(f"  - {method}: {count} videos")
         
-        # 输出未使用过的样本比例
-        unused_count = sum(1 for k, v in self.video_usage_counts.items() if v == 0)
-        total_count = len(self.video_usage_counts)
-        print(f"Unused samples: {unused_count}/{total_count} ({unused_count/total_count*100:.2f}%)")
+        return real_dirs, fake_dirs
     
     def __getitem__(self, index):
         """
