@@ -19,6 +19,7 @@ from tqdm import tqdm
 from config.data_loader import FaceForensicsLoader, CelebDFLoader
 from config.transforms import get_transforms
 from config.focal_loss import BinaryFocalLoss
+from train import combined_loss
 from network.model import DeepfakeDetector
 from utils.visualization import EvalVisualization
 
@@ -49,7 +50,7 @@ def parse_args():
 def load_model(model_path, dim=128, device="cuda"):
     """加载预训练模型"""
     print(f"Loading model from {model_path}...")
-    model = DeepfakeDetector(in_channels=3, dim=dim, dama_dim=dim).to(device)
+    model = DeepfakeDetector(in_channels=3, dama_dim=dim).to(device)
     
     try:
         model.load_state_dict(torch.load(model_path, map_location=device))
@@ -113,18 +114,18 @@ def evaluate(model, dataloader, device="cuda", args=None):
             
             outputs = model(frames, batch_size=args.batch_size, ablation='dynamic')
             
-            loss, _ = criterion(outputs['logits'], labels)
+            loss, _ = criterion(outputs, labels, criterion, epoch=1, max_epochs=1)
             test_loss += loss.item() * frames.size(0)
             
             # 收集预测结果
             probs = torch.sigmoid(outputs['logits']).detach().cpu().numpy()
-            all_preds.extend(probs[:, 1].detach().cpu().numpy())
+            all_preds.extend(probs)
             all_labels.extend(labels.cpu().numpy())
             
     
     test_loss /= len(dataloader.dataset)
     
-    binary_preds = [1 if p >= 0.55 else 0 for p in all_preds]
+    binary_preds = [1 if p >= 0.5 else 0 for p in all_preds]
     
     metrics = {
         'loss': test_loss,

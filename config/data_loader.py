@@ -110,7 +110,6 @@ class FaceForensicsLoader(Dataset):
             if not os.path.exists(fake_dir):
                 raise FileNotFoundError(f"Fake videos directory '{fake_dir}' not found")
             
-            method_videos[method] = []
             for video_id in video_ids:
                 target, source = video_id
                 key = f'{target}_{source}'

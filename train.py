@@ -263,7 +263,7 @@ def main():
     fake_count = len(train_dataset.fake_videos)
     alpha = torch.tensor([fake_count / (real_count + fake_count)]).to(device)
     
-    criterion = BinaryFocalLoss(alpha=alpha, gamma=2)
+    criterion = BCEWithLogitsLoss(pos_weight=alpha)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-7)
     
