@@ -12,7 +12,7 @@ from torch.nn import BCEWithLogitsLoss
 from torch.nn import functional as F
 # from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
-from sklearn.metrics import roc_auc_score, f1_score # type: ignore
+from sklearn.metrics import roc_auc_score, accuracy_score # type: ignore
 
 from network.model import DeepfakeDetector
 from config.data_loader import FaceForensicsLoader
@@ -126,13 +126,13 @@ def train_epoch(model, dataloader, criterion, optimizer, device, batch_size, acc
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
-    epoch_f1 = f1_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
+    epoch_acc = accuracy_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
     
     return {
         'loss': epoch_loss,
         'cls_loss': epoch_cls_loss,
         'auc': epoch_auc,
-        'f1': epoch_f1
+        'acc': epoch_acc
     }
     
 def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_epochs=None):
@@ -160,13 +160,13 @@ def val_epoch(model, dataloader, criterion, device, batch_size, epoch=None, max_
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_cls_loss = running_cls_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
-    epoch_f1 = f1_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
+    epoch_acc = accuracy_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
     
     return {
         'loss': epoch_loss,
         'cls_loss': epoch_cls_loss,
         'auc': epoch_auc,
-        'f1': epoch_f1
+        'acc': epoch_acc
     }
     
 def main():
@@ -300,11 +300,11 @@ def main():
         print(f"Epoch {epoch+1}/{args.epochs}")
         print(f"Train Loss: {train_metrics['loss']:.4f} | "
               f"Train AUC: {train_metrics['auc']:.4f} | "
-              f"Train F1 Score: {train_metrics['f1']:.4f} | "
+              f"Train ACC: {train_metrics['acc']:.4f} | "
               f"Time: {epoch_time:.2f}s")
         print(f"Val Loss: {val_metrics['loss']:.4f} | "
               f"Val AUC: {val_metrics['auc']:.4f} | "
-              f"Val F1 Score: {val_metrics['f1']:.4f}")
+              f"Val ACC: {val_metrics['acc']:.4f}")
         
         train_viz.update(
             epoch=epoch,
