@@ -70,7 +70,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     logits = outputs['logits']
     labels = labels.view(-1, 1).float()
     
-    if epoch < 0.2 * max_epochs:
+    if epoch < 0.3 * max_epochs:
         cls_loss = criterion(logits, labels)
         return cls_loss, {
             'cls_loss': cls_loss.item(),
