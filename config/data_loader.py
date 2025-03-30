@@ -108,9 +108,12 @@ class FaceForensicsLoader(Dataset):
             method_videos[method] = []
             for video_id in video_ids:
                 target, source = video_id
+                key = f'{target}_{source}'
                 frames_dir = os.path.join(fake_dir, f'{target}_{source}')
                 if os.path.exists(frames_dir):
-                    method_videos[method].append({
+                    if key not in method_videos:
+                        method_videos[key] = []
+                    method_videos[key].append({
                         'path': frames_dir,
                         'method': method,
                         'target': target,
@@ -119,14 +122,13 @@ class FaceForensicsLoader(Dataset):
         
         # 从每种方法中随机均匀提取样本
         fake_dirs = []
-        for method, videos in method_videos.items():
-            # 如果该方法下的视频不足，全部使用
-            if len(videos) <= samples_per_method:
-                fake_dirs.extend(videos)
-            else:
-                # 随机选择指定数量的样本
-                selected = random.sample(videos, samples_per_method)
-                fake_dirs.extend(selected)
+        method_counts = {method: 0 for method in self.methods}
+        for video_id, methods_available in method_videos.items():
+            # 优先选择样本量少的方法
+            methods_available.sort(key=lambda x: method_counts[x['method']])
+            selected = methods_available[0]
+            fake_dirs.append(selected)
+            method_counts[selected['method']] += 1
         
         # 打乱伪造视频的顺序，确保不同方法的视频混合在一起
         random.shuffle(fake_dirs)
