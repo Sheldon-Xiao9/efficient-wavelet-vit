@@ -25,9 +25,8 @@ class SFE(nn.Module):
         self.space_efficient = self.efficient_backbone.features[:5]
         DIM_FRONT_5 = 128
         
-        # 冻结
         for param in self.space_efficient.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
         
         # 空间卷积
         self.space_conv = nn.Conv2d(DIM_FRONT_5, dim, kernel_size=3, padding=1)

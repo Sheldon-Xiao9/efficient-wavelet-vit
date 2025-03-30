@@ -273,12 +273,6 @@ def main():
         
         start_time = time.time()
         
-        # 如果训练已超过 60% 的 Epochs，则解冻 EfficientNet 和 ViT 参数
-        if epoch >= 0.6 * args.epochs:
-            for param in model.sfe.space_efficient.parameters():
-                param.requires_grad = True
-            print("Unfreezing EfficientNet parameters...")
-        
         # 训练
         train_metrics = train_epoch(model, train_loader, criterion, optimizer, device, args.batch_size, args.accum_steps, epoch, args.epochs)
         scheduler.step()
