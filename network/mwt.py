@@ -39,7 +39,8 @@ class MWT(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(dama_dim, dama_dim, kernel_size=3, padding=1),
             nn.BatchNorm2d(dama_dim),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool2d(1)
         )
         
         # 高频通道压缩器（处理LH，HL,HH三个高频分量）
@@ -112,10 +113,15 @@ class MWT(nn.Module):
         multi_scale_feats = torch.cat(high_freqs, dim=1)
         fused_hf_feats = self.multiscale_fusion(multi_scale_feats)
         
-        hf_feats_upsampled = F.interpolate(fused_hf_feats, size=(H, W), mode='bilinear')
-        
-        freq_feats = self.freq_conv(hf_feats_upsampled)
+        freq_feats = self.freq_conv(fused_hf_feats)
         freq_feats = self.freq_pool(freq_feats)
         
         return freq_feats
+
+if __name__ == "__main__":
+    # 测试MWT模块
+    mwt = MWT()
+    x = torch.randn(8, 3, 224, 224)
+    y = mwt(x)
+    print(y.shape)
     

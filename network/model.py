@@ -1,9 +1,9 @@
 import torch
-# import copy
+import yaml # type: ignore
 from torch import nn
 from network.dama import DAMA
 from network.mwt import MWT
-from network.sfe import SFE
+from network.sfe import EfficientViT
 
 class DeepfakeDetector(nn.Module):
     def __init__(self, in_channels=3, dama_dim=128, batch_size=16, ablation='dynamic'):
@@ -30,7 +30,7 @@ class DeepfakeDetector(nn.Module):
         self.dama = DAMA(in_channels=in_channels, dim=dama_dim, num_heads=4, levels=3, batch_size=batch_size)
         
         self.mwt = MWT(in_channels=in_channels, dama_dim=dama_dim)
-        self.sfe = SFE(in_channels=in_channels)
+        self.sfe = EfficientViT(config=yaml.safe_load(open('config/architecture.yaml', 'r')), channels=dama_dim, selected_efficient_net=1)
         
         # 特征融合层
         self.fusion_gate = nn.Sequential(
