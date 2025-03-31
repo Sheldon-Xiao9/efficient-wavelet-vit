@@ -101,7 +101,7 @@ class EvalVisualization:
         
     def plot_orth_vs_pred(self, orth_loss: np.ndarray, predictions: np.ndarray, labels: np.ndarray) -> None:
         """
-        绘制一致性得分与预测概率的关系
+        绘制正交约束与预测概率的关系
         
         :param orth_loss: 正交约束
         :type orth_loss: np.ndarray
@@ -110,16 +110,31 @@ class EvalVisualization:
         :param labels: 真实标签
         :type labels: np.ndarray
         """
-        if len(orth_loss) == 0:
+        if orth_loss is None or len(orth_loss) == 0:
             return
         
         plt.figure(figsize=(10, 6))
-        plt.scatter(orth_loss[labels == 0], predictions[labels == 0], label='Real', alpha=0.7, c='blue')
-        plt.scatter(orth_loss[labels == 1], predictions[labels == 1], label='Fake', alpha=0.7, c='red')
+        orth_loss_array = np.array(orth_loss)
+        
+        batch_size = len(predictions) // len(orth_loss)
+        if batch_size < 1:
+            batch_size = 1  # 防止除零错误
+            
+        expanded_orth_loss = np.repeat(orth_loss_array, batch_size)
+        # 如果长度不匹配，则截断或填充
+        if len(expanded_orth_loss) > len(predictions):
+            expanded_orth_loss = expanded_orth_loss[:len(predictions)]
+        elif len(expanded_orth_loss) < len(predictions):
+            # 填充剩余部分
+            padding = np.full(len(predictions) - len(expanded_orth_loss), expanded_orth_loss[-1])
+            expanded_orth_loss = np.concatenate([expanded_orth_loss, padding])
+        
+        plt.scatter(expanded_orth_loss[labels == 0], predictions[labels == 0], label='Real', alpha=0.7, c='blue')
+        plt.scatter(expanded_orth_loss[labels == 1], predictions[labels == 1], label='Fake', alpha=0.7, c='red')
         plt.axhline(y=0.5, color='k', linestyle='--', linewidth=1)
-        plt.xlabel('Orth Loss Score')
+        plt.xlabel('Batch Orthogonal Loss (Approximated)')
         plt.ylabel('Prediction')
-        plt.title('Orth Loss Scores vs Predictions')
+        plt.title('Approximate Relationship: Orthogonal Loss vs Predictions')
         plt.grid(True, alpha=0.3)
         plt.savefig(os.path.join(self.output_path, 'orth_vs_prediction.png'))
         plt.close()
@@ -213,7 +228,7 @@ class TrainVisualization:
         :param smoothing: 是否进行平滑处理，默认为False
         :type smoothing: bool
         """
-        fig, axes = plt.subplots(1, 2, figsize=(10, 10), sharex=True)
+        fig, axes = plt.subplots(1, 2, figsize=(10, 8), sharex=True)
         
         train_loss = self._smooth_curve(self.history['train_loss']) if smoothing else self.history['train_loss']
         val_loss = self._smooth_curve(self.history['val_loss']) if smoothing else self.history['val_loss']
@@ -253,7 +268,7 @@ class TrainVisualization:
         :param smoothing: 是否进行平滑处理，默认为False
         :type smoothing: bool
         """
-        fig, axes = plt.subplots(1, 2, figsize=(10, 10), sharex=True)
+        fig, axes = plt.subplots(1, 2, figsize=(10, 8), sharex=True)
         
         # 准确率曲线
         train_acc = self._smooth_curve(self.history['train_acc']) if smoothing else self.history['train_acc']
@@ -305,7 +320,7 @@ class TrainVisualization:
         :param smoothing: 是否进行平滑处理，默认为False
         :type smoothing: bool
         """
-        fig, axes = plt.subplots(1, 3, figsize=(12, 15), sharex=True)
+        fig, axes = plt.subplots(1, 3, figsize=(12, 8), sharex=True)
         
         # 所有数据
         train_loss = self._smooth_curve(self.history['train_loss']) if smoothing else self.history['train_loss']
