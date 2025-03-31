@@ -174,15 +174,12 @@ class DAMA(nn.Module):
         
         # 分批处理视频帧
         for start_idx in range(0, K, batch_size):
-            # 清理缓存
-            torch.cuda.empty_cache()
             
             end_idx = min(start_idx + batch_size, K)
             batch_frames = x[:, start_idx:end_idx] # [B, batch_size, C, H, W]
 
             # 批处理帧
             features = self._process_frame(batch_frames.flatten(0,1))
-            torch.cuda.empty_cache()
             
             features_fused = features['fused'].view(B, -1, self.dim)
             mean_fused += features_fused.sum(dim=1)

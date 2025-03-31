@@ -271,6 +271,9 @@ def main():
     for epoch in range(args.epochs):
         print(f"\nEpoch {epoch+1}/{args.epochs}\n{'='*50}")
         
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
         start_time = time.time()
         
         # 训练
