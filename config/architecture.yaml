@@ -3,7 +3,7 @@ model:
   patch-size: 7
   num-classes: 1
   dim: 1024
-  depth: 6
+  depth: 2
   dim-head: 64
   heads: 8
   mlp-dim: 2048

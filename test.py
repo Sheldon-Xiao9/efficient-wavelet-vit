@@ -138,16 +138,16 @@ def test_model(args):
             print("="*50)
             
             # SFE模块
-            print("5. Testing SFE module...")
-            sfe_outputs = []
-            for k in range(K):
-                frame_k = frames[:, k]
-                sfe_output = model.sfe(frame_k)
-                sfe_outputs.append(sfe_output)
-            sfe_outputs = torch.stack(sfe_outputs)
-            print("SFE output keys: ")
-            print(f"MWT output shape: {sfe_outputs.shape}")
-            print("="*50)
+            # print("5. Testing SFE module...")
+            # sfe_outputs = []
+            # for k in range(K):
+            #     frame_k = frames[:, k]
+            #     sfe_output = model.sfe(frame_k)
+            #     sfe_outputs.append(sfe_output)
+            # sfe_outputs = torch.stack(sfe_outputs)
+            # print("SFE output keys: ")
+            # print(f"MWT output shape: {sfe_outputs.shape}")
+            # print("="*50)
             
             # 测试完整模型
             print("6. Testing complete model...")

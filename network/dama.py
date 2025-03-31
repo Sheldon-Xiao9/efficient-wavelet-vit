@@ -112,7 +112,7 @@ class DAMA(nn.Module):
         # 多头注意力
         self.cross_att = BidirectionalCrossTransformer(
             dim=dim,
-            depth=2,
+            depth=4,
             heads=num_heads,
             dim_head=dim//num_heads,
             dropout=0.1
