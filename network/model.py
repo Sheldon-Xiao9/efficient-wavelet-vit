@@ -30,7 +30,7 @@ class DeepfakeDetector(nn.Module):
         self.dama = DAMA(in_channels=in_channels, dim=dama_dim, num_heads=4, levels=3, batch_size=batch_size)
         
         self.mwt = MWT(in_channels=in_channels, dama_dim=dama_dim)
-        self.sfe = EfficientViT(config=yaml.safe_load(open('config/architecture.yaml', 'r')), channels=dama_dim, selected_efficient_net=1)
+        self.sfe = EfficientViT(config=yaml.safe_load(open('config/architecture.yaml', 'r')), channels=dama_dim, selected_efficient_net=0)
         
         # 特征融合层
         self.fusion_gate = nn.Sequential(
