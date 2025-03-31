@@ -182,14 +182,17 @@ class DAMA(nn.Module):
             # 批处理帧
             features = self._process_frame(batch_frames.flatten(0,1))
             
-            features_fused = features['fused'].view(B, -1, self.dim)
-            mean_fused += features_fused.sum(dim=1)
+            b_size = batch_frames.shape[0]
+            f_size = batch_frames.size(1)
             
-            features_space = features['space'].view(B, -1, self.dim)
-            mean_space += features_space.sum(dim=1)
+            features_fused = features['fused']
+            mean_fused += features_fused.reshape(b_size, f_size, -1).sum(dim=1)
             
-            features_freq = features['freq'].view(B, -1, self.dim)
-            mean_freq += features_freq.sum(dim=1)
+            features_space = features['space']
+            mean_space += features_space.reshape(b_size, f_size, -1).sum(dim=1)
+            
+            features_freq = features['freq']
+            mean_freq += features_freq.reshape(b_size, f_size, -1).sum(dim=1)
             
         mean_fused /= K # 连接所有批次的特征
         mean_space /= K
