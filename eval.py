@@ -4,6 +4,7 @@ import time
 import yaml # type: ignore
 import numpy as np
 import torch
+from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import DataLoader
 from sklearn.metrics import (  # type: ignore
     roc_auc_score,
@@ -103,7 +104,7 @@ def evaluate(model, dataloader, device="cuda", args=None):
     all_preds = []
     all_labels = []
     test_loss = 0.0
-    criterion = BinaryFocalLoss(alpha=0.2, gamma=2)
+    criterion = BCEWithLogitsLoss()
     
     print("Evaluating model on the test set...")
     
@@ -114,7 +115,7 @@ def evaluate(model, dataloader, device="cuda", args=None):
             
             outputs = model(frames, batch_size=args.batch_size, ablation='dynamic')
             
-            loss, _ = criterion(outputs, labels, criterion, epoch=1, max_epochs=1)
+            loss, _ = combined_loss(outputs, labels, criterion, epoch=1, max_epochs=1)
             test_loss += loss.item() * frames.size(0)
             
             # 收集预测结果
@@ -180,11 +181,21 @@ def main():
     # 保存评估结果到yaml文件
     output_path = os.path.join(args.output, "eval_results.yaml")
     with open(output_path, "w") as f:
-        f.write(f"# Evaluation results for {args.model_path}\n")
-        serialized_metrics = {
-            k: float(v) if isinstance(v, np.ndarray) else v
-            for k, v in metrics.items()
-        }
+        serialized_metrics = {}
+        for k, v in metrics.items():
+            if k == 'conf_matrix':
+                # 将混淆矩阵转换为列表
+                serialized_metrics[k] = v.tolist()
+            elif isinstance(v, np.ndarray):
+                # 处理其他数组类型
+                if v.size == 1:
+                    serialized_metrics[k] = float(v.item())
+                else:
+                    serialized_metrics[k] = v.tolist()
+            else:
+                # 非数组类型直接保留
+                serialized_metrics[k] = v
+        
         yaml.dump(serialized_metrics, f, default_flow_style=False)
         
     print(f"Saved evaluation results to {output_path}")
