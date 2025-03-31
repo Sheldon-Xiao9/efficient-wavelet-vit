@@ -1,3 +1,4 @@
+import os
 import torch
 import yaml # type: ignore
 from torch import nn
@@ -7,6 +8,8 @@ from einops import rearrange
 
 from network.mwt import MWT
 from network.sfe import EfficientViT
+
+os.environ['TORCH_USE_CUDA_DSA'] = '1'
 
 # 自定义交叉注意力模块
 class CrossAttention(nn.Module):
@@ -174,25 +177,22 @@ class DAMA(nn.Module):
         
         # 分批处理视频帧
         for start_idx in range(0, K, batch_size):
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
             
             end_idx = min(start_idx + batch_size, K)
             batch_frames = x[:, start_idx:end_idx] # [B, batch_size, C, H, W]
 
             # 批处理帧
             features = self._process_frame(batch_frames.flatten(0,1))
+
+            features_fused = features['fused'].view(B, -1, self.dim)
+            mean_fused += features_fused.sum(dim=1)
             
-            b_size = batch_frames.shape[0]
-            f_size = batch_frames.size(1)
+            features_space = features['space'].view(B, -1, self.dim)
+            mean_space += features_space.sum(dim=1)
             
-            features_fused = features['fused']
-            mean_fused += features_fused.reshape(b_size, f_size, -1).sum(dim=1)
-            
-            features_space = features['space']
-            mean_space += features_space.reshape(b_size, f_size, -1).sum(dim=1)
-            
-            features_freq = features['freq']
-            mean_freq += features_freq.reshape(b_size, f_size, -1).sum(dim=1)
+            features_freq = features['freq'].view(B, -1, self.dim)
+            mean_freq += features_freq.sum(dim=1)
             
         mean_fused /= K # 连接所有批次的特征
         mean_space /= K
