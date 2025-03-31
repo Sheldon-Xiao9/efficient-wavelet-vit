@@ -104,6 +104,7 @@ def evaluate(model, dataloader, device="cuda", args=None):
     all_preds = []
     all_labels = []
     test_loss = 0.0
+    test_orth_loss = []
     criterion = BCEWithLogitsLoss()
     
     print("Evaluating model on the test set...")
@@ -115,13 +116,14 @@ def evaluate(model, dataloader, device="cuda", args=None):
             
             outputs = model(frames, batch_size=args.batch_size, ablation='dynamic')
             
-            loss, _ = combined_loss(outputs, labels, criterion, epoch=1, max_epochs=1)
+            loss, losses = combined_loss(outputs, labels, criterion, epoch=1, max_epochs=1)
             test_loss += loss.item() * frames.size(0)
             
             # 收集预测结果
             probs = torch.sigmoid(outputs['logits']).detach().cpu().numpy()
             all_preds.extend(probs)
             all_labels.extend(labels.cpu().numpy())
+            test_orth_loss.extend(losses['orth_loss'])
             
     
     test_loss /= len(dataloader.dataset)
@@ -130,6 +132,7 @@ def evaluate(model, dataloader, device="cuda", args=None):
     
     metrics = {
         'loss': test_loss,
+        'orth_loss': test_orth_loss,
         'accuracy': accuracy_score(all_labels, binary_preds),
         'auc': roc_auc_score(all_labels, all_preds),
         'precision': precision_score(all_labels, binary_preds),
@@ -203,7 +206,8 @@ def main():
     if args.visualize:
         print("Generating evaluation visualizations...")
         viz = EvalVisualization(args.output)
-        viz.plot_metrics(metrics, labels, preds)
+        orth_loss = metrics['orth_loss']
+        viz.plot_metrics(metrics, labels, preds, orth_loss)
         print(f"Saved visualizations to {args.output}")
 
 if __name__ == "__main__":
