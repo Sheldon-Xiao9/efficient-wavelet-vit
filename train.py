@@ -242,7 +242,16 @@ def main():
     ).to(device)
     
     if args.multi_gpu and num_gpus > 1:
-        model = nn.DataParallel(model)
+        # 配置分布式训练
+        torch.distributed.init_process_group(backend='nccl')
+        local_rank = torch.distributed.get_rank()
+        torch.cuda.set_device(local_rank)
+        device = torch.device('cuda', local_rank)
+        
+        model = model.to(device)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
+    else:
+        model = model.to(device)
     
     print("Hyperparameters:")
     print(f"Batch size: {args.batch_size}")
