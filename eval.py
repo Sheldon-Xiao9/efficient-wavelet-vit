@@ -123,7 +123,7 @@ def evaluate(model, dataloader, device="cuda", args=None):
             probs = torch.sigmoid(outputs['logits']).detach().cpu().numpy()
             all_preds.extend(probs)
             all_labels.extend(labels.cpu().numpy())
-            test_orth_loss.extend(losses['orth_loss'])
+            test_orth_loss.append(losses['orth_loss'])
             
     
     test_loss /= len(dataloader.dataset)
