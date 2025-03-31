@@ -112,7 +112,7 @@ class DAMA(nn.Module):
         # 多头注意力
         self.cross_att = BidirectionalCrossTransformer(
             dim=dim,
-            depth=4,
+            depth=2,
             heads=num_heads,
             dim_head=dim//num_heads,
             dropout=0.1
@@ -174,6 +174,7 @@ class DAMA(nn.Module):
         
         # 分批处理视频帧
         for start_idx in range(0, K, batch_size):
+            torch.cuda.empty_cache()
             
             end_idx = min(start_idx + batch_size, K)
             batch_frames = x[:, start_idx:end_idx] # [B, batch_size, C, H, W]
