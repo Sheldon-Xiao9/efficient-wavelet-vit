@@ -183,10 +183,12 @@ class FaceForensicsLoader(Dataset):
             self.current_fake = self.fixed_fake.copy()
         elif self.split == 'val':
             # 验证集：80%固定样本集，20%随机样本集
+            random.seed(42)
             self.core_fake = random.sample(self.fake_videos, int(len(self.fake_videos) * 0.8))
             
             self.dynamic_pool_fake = [v for v in self.fake_videos if v not in self.core_fake]
             
+            random.seed(42)
             self.dynamic_fake = random.sample(self.dynamic_pool_fake, min(int(len(self.fake_videos) * 0.2), len(self.dynamic_pool_fake)))
             
             self.current_fake = self.core_fake + self.dynamic_fake
@@ -258,6 +260,7 @@ class FaceForensicsLoader(Dataset):
             self._refresh_training_samples()
         elif self.split == 'val':
             # 验证集更新20%
+            random.seed(42 + self.current_epoch)
             self.dynamic_fake = random.sample(self.dynamic_pool_fake, min(int(len(self.fake_videos) * 0.2), len(self.dynamic_pool_fake)))
             
             self.current_fake = self.core_fake + self.dynamic_fake
