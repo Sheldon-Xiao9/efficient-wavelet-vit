@@ -241,8 +241,8 @@ class FaceForensicsLoader(Dataset):
                 self.fixed_sample_ratio = 1.0
                 self.novelty_ratio = 0.0
                 
-                print("  - Fixed sample ratio: {self.fixed_sample_ratio:.2f}")
-                print("  - Novelty ratio: {self.novelty_ratio:.2f}")
+                print(f"  - Fixed sample ratio: {self.fixed_sample_ratio:.2f}")
+                print(f"  - Novelty ratio: {self.novelty_ratio:.2f}")
                 print("  - Using fixed sample strategy")
             else:
                 progress_ratio = min(1.0, epoch / (max_epochs * late_stage))
