@@ -70,7 +70,7 @@ def combined_loss(outputs, labels, criterion, epoch, max_epochs):
     logits = outputs['logits']
     labels = labels.view(-1, 1).float()
     
-    if epoch < 0.3 * max_epochs:
+    if epoch < 0.2 * max_epochs:
         cls_loss = criterion(logits, labels)
         return cls_loss, {
             'cls_loss': cls_loss.item(),
@@ -271,6 +271,9 @@ def main():
     best_val_auc = 0.0
     for epoch in range(args.epochs):
         print(f"\nEpoch {epoch+1}/{args.epochs}\n{'='*50}")
+        
+        train_dataset.update_sampling_strategy(epoch, args.epochs)
+        val_dataset.update_sampling_strategy(epoch, args.epochs)
         
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

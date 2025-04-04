@@ -1,8 +1,9 @@
 import argparse
 import os
 import time
-import yaml # type: ignore
+import json
 import numpy as np
+import pandas as pd # type: ignore
 import torch
 from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import DataLoader
@@ -78,7 +79,8 @@ def get_dataloader(args):
             root=args.root,
             split="test",
             frame_count=args.frame_count,
-            transform=transforms['test']
+            transform=transforms['test'],
+            single_method=getattr(args, 'single_method', None)
         )
     elif args.dataset == "celeb-df":
         dataset = CelebDFLoader(
@@ -139,7 +141,9 @@ def evaluate(model, dataloader, device="cuda", args=None):
         'recall': recall_score(all_labels, binary_preds),
         'f1': f1_score(all_labels, binary_preds),
         'ap': average_precision_score(all_labels, all_preds),
-        'conf_matrix': confusion_matrix(all_labels, binary_preds)
+        'conf_matrix': confusion_matrix(all_labels, binary_preds),
+        'labels': all_labels,
+        'preds': all_preds
     }
     
     return metrics, np.array(all_preds), np.array(all_labels)
@@ -159,56 +163,175 @@ def main():
     print("="*50)
     
     model = load_model(args.model_path, dim=args.dim, device=device)
-    dataloader = get_dataloader(args)
     
-    # 评估模型
-    start_time = time.time()
-    metrics, preds, labels = evaluate(model, dataloader, device=device, args=args)
-    eval_time = time.time() - start_time
-    
-    # 输出评估结果
-    print("\n"+"="*50)
-    print(f"Evaluation complete in {eval_time:.2f}s")
-    print("Results:")
-    print(f"Test Loss:      {metrics['loss']:.4f}")
-    print(f"Accuracy:       {metrics['accuracy']:.4f}")
-    print(f"AUC:            {metrics['auc']:.4f}")
-    print(f"Precision:      {metrics['precision']:.4f}")
-    print(f"Recall:         {metrics['recall']:.4f}")
-    print(f"F1 Score:       {metrics['f1']:.4f}")
-    print(f"Average Precision: {metrics['ap']:.4f}")
-    print(f"Confusion Matrix:")
-    print(metrics['conf_matrix'])
-    print("="*50)
-    
-    # 保存评估结果到yaml文件
-    output_path = os.path.join(args.output, "eval_results.yaml")
-    with open(output_path, "w") as f:
-        serialized_metrics = {}
-        for k, v in metrics.items():
-            if k == 'conf_matrix':
-                # 将混淆矩阵转换为列表
-                serialized_metrics[k] = v.tolist()
-            elif isinstance(v, np.ndarray):
-                # 处理其他数组类型
-                if v.size == 1:
-                    serialized_metrics[k] = float(v.item())
-                else:
-                    serialized_metrics[k] = v.tolist()
-            else:
-                # 非数组类型直接保留
-                serialized_metrics[k] = v
+    # 按方法评估
+    if args.dataset == "ff++":
+        methods = ['Deepfakes', 'Face2Face', 'FaceSwap', 'NeuralTextures', 'FaceShifter']
+        all_results = {}
         
-        yaml.dump(serialized_metrics, f, default_flow_style=False)
+        # 先添加一个整体评估
+        print("\n" + "="*50)
+        print("Evaluating on all methods combined")
+        dataloader = get_dataloader(args)
+        start_time = time.time()
+        metrics, preds, labels = evaluate(model, dataloader, device=device, args=args)
+        eval_time = time.time() - start_time
+        print(f"Evaluation on all methods complete in {eval_time:.2f}s")
+        all_results['All'] = metrics
         
-    print(f"Saved evaluation results to {output_path}")
+        # 输出整体评估结果
+        print("Results:")
+        print(f"Test Loss:      {metrics['loss']:.4f}")
+        print(f"Accuracy:       {metrics['accuracy']:.4f}")
+        print(f"AUC:            {metrics['auc']:.4f}")
+        print(f"Precision:      {metrics['precision']:.4f}")
+        print(f"Recall:         {metrics['recall']:.4f}")
+        print(f"F1 Score:       {metrics['f1']:.4f}")
+        print(f"Average Precision: {metrics['ap']:.4f}")
+        print(f"Confusion Matrix:")
+        print(metrics['conf_matrix'])
+        
+        # 按照每种方法单独评估
+        for method in methods:
+            print("\n" + "="*50)
+            print(f"Evaluating on {method}")
+            
+            # 为特定方法创建数据加载器
+            args.single_method = method  # 添加这个属性
+            method_dataloader = get_dataloader(args)
+            
+            # 评估特定方法
+            start_time = time.time()
+            method_metrics, method_preds, method_labels = evaluate(model, method_dataloader, device=device, args=args)
+            eval_time = time.time() - start_time
+            print(f"Evaluation on {method} complete in {eval_time:.2f}s")
+            all_results[method] = method_metrics
+            
+            # 输出特定方法的评估结果
+            print("Results:")
+            print(f"Test Loss:      {method_metrics['loss']:.4f}")
+            print(f"Accuracy:       {method_metrics['accuracy']:.4f}")
+            print(f"AUC:            {method_metrics['auc']:.4f}")
+            print(f"Precision:      {method_metrics['precision']:.4f}")
+            print(f"Recall:         {method_metrics['recall']:.4f}")
+            print(f"F1 Score:       {method_metrics['f1']:.4f}")
+            print(f"Average Precision: {method_metrics['ap']:.4f}")
+            print(f"Confusion Matrix:")
+            print(method_metrics['conf_matrix'])
+            print("="*50)
+        
+        # 将结果保存为CSV文件
+        results_df = []
+        for method_name, metrics in all_results.items():
+            # 提取主要指标
+            row = {
+                'Method': method_name,
+                'Loss': metrics['loss'],
+                'Accuracy': metrics['accuracy'],
+                'AUC': metrics['auc'],
+                'Precision': metrics['precision'],
+                'Recall': metrics['recall'],
+                'F1': metrics['f1'],
+                'AP': metrics['ap'],
+                'TN': metrics['conf_matrix'][0, 0],
+                'FP': metrics['conf_matrix'][0, 1],
+                'FN': metrics['conf_matrix'][1, 0],
+                'TP': metrics['conf_matrix'][1, 1]
+            }
+            results_df.append(row)
+        
+        # 转换为DataFrame并保存
+        df = pd.DataFrame(results_df)
+        output_path = os.path.join(args.output, "eval_results.csv")
+        df.to_csv(output_path, index=False)
+        
+        # 另存为混淆矩阵详细信息
+        conf_matrices = {}
+        for method_name, metrics in all_results.items():
+            conf_matrices[f"{method_name}_matrix"] = metrics['conf_matrix'].tolist()
+        
+        # 保存为JSON格式
+        json_path = os.path.join(args.output, "confusion_matrices.json")
+        with open(json_path, 'w') as f:
+            json.dump(conf_matrices, f, indent=2)
+            
+        print(f"Saved evaluation results to {output_path}")
+        
+        if args.visualize:
+            print("Generating evaluation visualizations...")
+            
+            # 为整体结果创建可视化
+            all_viz_dir = os.path.join(args.output, "visualizations", "all_methods") 
+            os.makedirs(all_viz_dir, exist_ok=True)
+            all_viz = EvalVisualization(all_viz_dir)
+            all_viz.plot_metrics(all_results['All'], labels, preds, metrics['orth_loss'])
+            
+            # 为每种方法创建单独的可视化
+            for method in methods:
+                method_viz_dir = os.path.join(args.output, "visualizations", method)
+                os.makedirs(method_viz_dir, exist_ok=True)
+                method_viz = EvalVisualization(method_viz_dir)
+                
+                # 获取该方法的结果
+                method_metrics = all_results[method]
+                method_labels = np.array(method_metrics.get('labels', []))
+                method_preds = np.array(method_metrics.get('preds', []))
+                method_viz.plot_metrics(method_metrics, method_labels, method_preds, method_metrics['orth_loss'])
+                
+            print(f"Saved visualizations to {os.path.join(args.output, 'visualizations')}")
     
-    if args.visualize:
-        print("Generating evaluation visualizations...")
-        viz = EvalVisualization(args.output)
-        orth_loss = metrics['orth_loss']
-        viz.plot_metrics(metrics, labels, preds, orth_loss)
-        print(f"Saved visualizations to {args.output}")
+    # 如果是CelebDF数据集
+    else:
+        dataloader = get_dataloader(args)
+    
+        # 评估模型
+        start_time = time.time()
+        metrics, preds, labels = evaluate(model, dataloader, device=device, args=args)
+        eval_time = time.time() - start_time
+        
+        # 输出评估结果
+        print("\n"+"="*50)
+        print(f"Evaluation complete in {eval_time:.2f}s")
+        print("Results:")
+        print(f"Test Loss:      {metrics['loss']:.4f}")
+        print(f"Accuracy:       {metrics['accuracy']:.4f}")
+        print(f"AUC:            {metrics['auc']:.4f}")
+        print(f"Precision:      {metrics['precision']:.4f}")
+        print(f"Recall:         {metrics['recall']:.4f}")
+        print(f"F1 Score:       {metrics['f1']:.4f}")
+        print(f"Average Precision: {metrics['ap']:.4f}")
+        print(f"Confusion Matrix:")
+        print(metrics['conf_matrix'])
+        print("="*50)
+        
+        # 保存为CSV
+        results = {
+            'Loss': metrics['loss'],
+            'Accuracy': metrics['accuracy'],
+            'AUC': metrics['auc'],
+            'Precision': metrics['precision'],
+            'Recall': metrics['recall'],
+            'F1': metrics['f1'],
+            'AP': metrics['ap'],
+            'TN': metrics['conf_matrix'][0, 0],
+            'FP': metrics['conf_matrix'][0, 1],
+            'FN': metrics['conf_matrix'][1, 0],
+            'TP': metrics['conf_matrix'][1, 1]
+        }
+        
+        df = pd.DataFrame([results])
+        output_path = os.path.join(args.output, "eval_results.csv")
+        df.to_csv(output_path, index=False)
+        print(f"Saved evaluation results to {output_path}")
+            
+        print(f"Saved evaluation results to {output_path}")
+        
+        if args.visualize:
+            print("Generating evaluation visualizations...")
+            viz = EvalVisualization(args.output)
+            orth_loss = metrics['orth_loss']
+            viz.plot_metrics(metrics, labels, preds, orth_loss)
+            print(f"Saved visualizations to {args.output}")
 
 if __name__ == "__main__":
     main()

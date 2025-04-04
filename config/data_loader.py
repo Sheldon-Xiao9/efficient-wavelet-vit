@@ -17,7 +17,11 @@ class FaceForensicsLoader(Dataset):
                  frame_count=24,
                  transform=None,
                  compression='C23',
-                 methods=['Deepfakes', 'Face2Face', 'FaceSwap', 'NeuralTextures', 'FaceShifter']):
+                 methods=['Deepfakes', 'Face2Face', 'FaceSwap', 'NeuralTextures', 'FaceShifter'],
+                 fixed_sample_ratio=1.0,
+                 novelty_ratio=0.0,
+                 single_method=None
+                 ):
         """
         初始化FaceForensicsLoader
         
@@ -41,6 +45,10 @@ class FaceForensicsLoader(Dataset):
         self.transform = transform
         self.compression = compression
         self.methods = methods
+        self.fixed_sample_ratio = fixed_sample_ratio
+        self.novelty_ratio = novelty_ratio
+        self.single_method = single_method
+        self.current_epoch = 0
         
         # 加载数据集划分文件
         self.split_ids = self._load_split()
@@ -48,10 +56,11 @@ class FaceForensicsLoader(Dataset):
         # 用于存储样本使用频率的字典
         self.all_fake_videos_by_method = {}
         self.video_usage_counts = {}
-        self.current_epoch = 0
         
         # 加载视频位置
         self.real_videos, self.fake_videos = self._load_frames_dirs(self.methods)
+        
+        self._init_sampling_strategy() # 初始化样本采样策略
         
         print(f"Loaded {len(self.real_videos)} real videos and {len(self.fake_videos)} fake videos")
         
@@ -124,15 +133,24 @@ class FaceForensicsLoader(Dataset):
                         'source': source
                     })
         
-        # 从每种方法中随机均匀提取样本
-        fake_dirs = []
-        method_counts = {method: 0 for method in self.methods}
-        for video_id, methods_available in method_videos.items():
-            # 优先选择样本量少的方法
-            methods_available.sort(key=lambda x: method_counts[x['method']])
-            selected = methods_available[0]
-            fake_dirs.append(selected)
-            method_counts[selected['method']] += 1
+        if self.split == 'test' and self.single_method is not None:
+            # 测试集：收集所有该方法的伪造视频
+            fake_dirs = []
+            for video_id, methods_available in method_videos.items():
+                for video in methods_available:
+                    if video['method'] == self.single_method:
+                        fake_dirs.append(video)
+        else:
+            # 训练集/验证集：从每种方法中随机均匀提取样本
+            fake_dirs = []
+            method_counts = {method: 0 for method in self.methods}
+            for video_id, methods_available in method_videos.items():
+                # 优先选择样本量少的方法
+                methods_available.sort(key=lambda x: method_counts[x['method']])
+                selected = methods_available[0]
+                fake_dirs.append(selected)
+                method_counts[selected['method']] += 1
+            
         
         # 打乱伪造视频的顺序，确保不同方法的视频混合在一起
         random.shuffle(fake_dirs)
@@ -146,6 +164,98 @@ class FaceForensicsLoader(Dataset):
             print(f"  - {method}: {count} videos")
         
         return real_dirs, fake_dirs
+    
+    def _init_sampling_strategy(self):
+        """初始化样本采样策略，为训练和验证创建不同的样本集"""
+        # 初始化视频使用计数
+        for video in self.fake_videos:
+            self.video_usage_counts[video['path']] = 0
+        
+        if self.split == 'train':
+            # 训练集：初始固定样本集
+            self.fixed_fake = random.sample(self.fake_videos, int(len(self.fake_videos) * self.fixed_sample_ratio))
+            
+            self.pool_fake = [v for v in self.fake_videos if v not in self.fixed_fake]
+            
+            self.current_fake = self.fixed_fake.copy()
+        elif self.split == 'val':
+            # 验证集：80%固定样本集，20%随机样本集
+            self.core_fake = random.sample(self.fake_videos, int(len(self.fake_videos) * 0.8))
+            
+            self.dynamic_pool_fake = [v for v in self.fake_videos if v not in self.core_fake]
+            
+            self.dynamic_fake = random.sample(self.dynamic_pool_fake, min(int(len(self.fake_videos) * 0.2), len(self.dynamic_pool_fake)))
+            
+            self.current_fake = self.core_fake + self.dynamic_fake
+    
+    def _refresh_training_samples(self):
+        """根据当前策略参数刷新训练样本"""
+        num_fixed_fake = int(len(self.fake_videos) * self.fixed_sample_ratio)
+        
+        # 计算当前固定样本集的数量
+        selected_fixed_fake = []
+        if num_fixed_fake > 0:
+            selected_fixed_fake = random.sample(self.fixed_fake, num_fixed_fake)
+        
+        # 剩余伪造视频数量
+        remaining_fake = len(self.fake_videos) - num_fixed_fake
+        
+        # 按照使用频率排序伪造视频池
+        self.pool_fake.sort(key=lambda x: self.video_usage_counts[x['path']])
+        
+        # 计算动态样本集的数量
+        num_new_fake = int(remaining_fake * self.novelty_ratio)
+        
+        # 随机选择新的伪造视频
+        num_random_fake = remaining_fake - num_new_fake
+        # 防止pool_fake为空时报错
+        if num_random_fake > 0 and len(self.pool_fake) > num_new_fake:
+            random_samples = random.sample(self.pool_fake[num_new_fake:], min(num_random_fake, len(self.pool_fake) - num_new_fake))
+        else:
+            random_samples = []
+        
+        self.current_fake = (selected_fixed_fake + self.pool_fake[:num_new_fake] + random_samples)
+        
+        # 确保没有重复
+        self.current_fake = list({v['path']: v for v in self.current_fake}.values())
+        
+        random.shuffle(self.current_fake)
+    
+    def update_sampling_strategy(self, epoch, max_epochs):
+        """
+        更新样本采样策略
+        
+        :param epoch: 当前训练轮次
+        :type epoch: int
+        :param max_epochs: 最大训练轮次
+        :type max_epochs: int
+        """
+        self.current_epoch = epoch
+        
+        if self.split == 'train':
+            early_stage = 0.3
+            late_stage = 0.7
+            
+            progress_ratio = min(1.0, epoch / (max_epochs * late_stage))
+            
+            self.fixed_sample_ratio = max(0.0, 1.0 - progress_ratio)
+            self.novelty_ratio = min(1.0, progress_ratio / early_stage)
+            
+            print(f"  - Fixed sample ratio: {self.fixed_sample_ratio:.2f}")
+            print(f"  - Novelty ratio: {self.novelty_ratio:.2f}")
+            
+            # 如果是训练前期（30%），使用固定样本集
+            if epoch < max_epochs * early_stage:
+                self.fixed_sample_ratio = 1.0
+                self.novelty_ratio = 0.0
+                print("  - Using fixed sample strategy")
+            
+            self._refresh_training_samples()
+        elif self.split == 'val':
+            # 验证集更新20%
+            self.dynamic_fake = random.sample(self.dynamic_pool_fake, min(int(len(self.fake_videos) * 0.2), len(self.dynamic_pool_fake)))
+            
+            self.current_fake = self.core_fake + self.dynamic_fake
     
     def __getitem__(self, index):
         """
@@ -168,9 +278,18 @@ class FaceForensicsLoader(Dataset):
         else:
             # 伪造视频
             fake_index = index - len(self.real_videos)
-            if fake_index >= len(self.fake_videos):
-                raise IndexError(f"Index '{index}' out of range")
-            frames_dir = self.fake_videos[fake_index]['path']
+            if self.split == 'train' or self.split == 'val':
+                if fake_index >= len(self.current_fake):
+                    raise IndexError(f"Index '{index}' out of range")
+                frames_dir = self.current_fake[fake_index]['path']
+                
+                # 更新视频使用计数
+                self.video_usage_counts[frames_dir] = self.video_usage_counts.get(frames_dir, 0) + 1
+            else:
+                if fake_index >= len(self.fake_videos):
+                    raise IndexError(f"Index '{index}' out of range")
+                frames_dir = self.fake_videos[fake_index]['path']
+            
             label = 1
         
         # 获取帧文件列表

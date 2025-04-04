@@ -43,8 +43,10 @@ class EvalVisualization:
         :type auc_score: float
         """
         fpr, tpr, _ = roc_curve(labels, predictions)
+        dense_fpr = np.linspace(0, 1, 1000)
+        interp_tpr = np.interp(dense_fpr, fpr, tpr)
         plt.figure(figsize=(8, 6))
-        plt.plot(fpr, tpr, label=f'AUC = {auc_score:.2f}')
+        plt.plot(dense_fpr, interp_tpr, label=f'AUC = {auc_score:.2f}')
         plt.plot([0, 1], [0, 1], linestyle='--', color='red')
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive Rate')
@@ -67,8 +69,10 @@ class EvalVisualization:
         :type ap_score: float
         """
         precision, recall, _ = precision_recall_curve(labels, predictions)
+        dense_recall = np.linspace(0, 1, 1000)
+        interp_precision = np.interp(dense_recall, recall, precision)
         plt.figure(figsize=(8, 6))
-        plt.plot(recall, precision, label=f'AP = {ap_score:.2f}')
+        plt.plot(dense_recall, interp_precision, label=f'AP = {ap_score:.2f}')
         plt.xlabel('Recall')
         plt.ylabel('Precision')
         plt.title('Precision-Recall Curve')
@@ -88,12 +92,12 @@ class EvalVisualization:
         :type labels: np.ndarray
         """
         plt.figure(figsize=(8, 6))
-        sns.kdeplot(predictions[labels == 0], label='Real', fill=True)
-        sns.kdeplot(predictions[labels == 1], label='Fake', fill=True)
+        sns.kdeplot(predictions[labels == 0], label='Real', fill=True, color='blue')
+        sns.kdeplot(predictions[labels == 1], label='Fake', fill=True, color='red')
         plt.xlabel('Prediction')
         plt.ylabel('Density')
         plt.title('Prediction Distribution')
-        plt.legend()
+        plt.legend(loc='upper right')
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
         plt.savefig(os.path.join(self.output_path, 'prediction_distribution.png'))
@@ -135,15 +139,16 @@ class EvalVisualization:
         plt.xlabel('Batch Orthogonal Loss (Approximated)')
         plt.ylabel('Prediction')
         plt.title('Approximate Relationship: Orthogonal Loss vs Predictions')
+        plt.legend(loc='upper right')
         plt.grid(True, alpha=0.3)
         plt.savefig(os.path.join(self.output_path, 'orth_vs_prediction.png'))
         plt.close()
     
-    def plot_metrics(self, metrix, labels: np.ndarray, predictions: np.ndarray, orth_loss = None) -> None:
+    def plot_metrics(self, metrics, labels: np.ndarray, predictions: np.ndarray, orth_loss = None) -> None:
         """生成所有评估指标的可视化"""
-        self.plot_confusion_matrix(metrix['conf_matrix'])
-        self.plot_roc_curve(labels, predictions, metrix['auc'])
-        self.plot_pr_curve(labels, predictions, metrix['ap'])
+        self.plot_confusion_matrix(metrics['conf_matrix'])
+        self.plot_roc_curve(labels, predictions, metrics['auc'])
+        self.plot_pr_curve(labels, predictions, metrics['ap'])
         self.plot_pred_distribution(predictions, labels)
         
         if len(orth_loss) > 0:
