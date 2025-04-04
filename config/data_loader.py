@@ -66,7 +66,10 @@ class FaceForensicsLoader(Dataset):
         
     def __len__(self):
         """返回数据集大小"""
-        return len(self.real_videos) + len(self.fake_videos)
+        if self.split == 'train' or self.split == 'val':
+            return len(self.real_videos) + len(self.current_fake)
+        else:
+            return len(self.real_videos) + len(self.fake_videos)
     
     def _load_split(self):
         """加载数据集划分文件"""
