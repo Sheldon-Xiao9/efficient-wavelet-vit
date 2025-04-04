@@ -236,19 +236,21 @@ class FaceForensicsLoader(Dataset):
             early_stage = 0.3
             late_stage = 0.7
             
-            progress_ratio = min(1.0, epoch / (max_epochs * late_stage))
-            
-            self.fixed_sample_ratio = max(0.0, 1.0 - progress_ratio)
-            self.novelty_ratio = min(1.0, progress_ratio / early_stage)
-            
-            print(f"  - Fixed sample ratio: {self.fixed_sample_ratio:.2f}")
-            print(f"  - Novelty ratio: {self.novelty_ratio:.2f}")
-            
             # 如果是训练前期（30%），使用固定样本集
             if epoch < max_epochs * early_stage:
                 self.fixed_sample_ratio = 1.0
                 self.novelty_ratio = 0.0
+                
+                print("  - Fixed sample ratio: {self.fixed_sample_ratio:.2f}")
+                print("  - Novelty ratio: {self.novelty_ratio:.2f}")
                 print("  - Using fixed sample strategy")
+            else:
+                progress_ratio = min(1.0, epoch / (max_epochs * late_stage))
+                self.fixed_sample_ratio = max(0.0, 1.0 - progress_ratio)
+                self.novelty_ratio = min(1.0, progress_ratio / early_stage)
+                
+                print(f"  - Fixed sample ratio: {self.fixed_sample_ratio:.2f}")
+                print(f"  - Novelty ratio: {self.novelty_ratio:.2f}")
             
             self._refresh_training_samples()
         elif self.split == 'val':
