@@ -43,10 +43,8 @@ class EvalVisualization:
         :type auc_score: float
         """
         fpr, tpr, _ = roc_curve(labels, predictions)
-        dense_fpr = np.linspace(0, 1, 1000)
-        interp_tpr = np.interp(dense_fpr, fpr, tpr)
         plt.figure(figsize=(8, 6))
-        plt.plot(dense_fpr, interp_tpr, label=f'AUC = {auc_score:.2f}')
+        plt.plot(fpr, tpr, label=f'AUC = {auc_score:.2f}')
         plt.plot([0, 1], [0, 1], linestyle='--', color='red')
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive Rate')
@@ -69,10 +67,8 @@ class EvalVisualization:
         :type ap_score: float
         """
         precision, recall, _ = precision_recall_curve(labels, predictions)
-        dense_recall = np.linspace(0, 1, 1000)
-        interp_precision = np.interp(dense_recall, recall, precision)
         plt.figure(figsize=(8, 6))
-        plt.plot(dense_recall, interp_precision, label=f'AP = {ap_score:.2f}')
+        plt.plot(recall, precision, label=f'AP = {ap_score:.2f}')
         plt.xlabel('Recall')
         plt.ylabel('Precision')
         plt.title('Precision-Recall Curve')
