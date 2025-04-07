@@ -43,6 +43,9 @@ def parse_args():
     parser.add_argument("--dataset", "--ds", type=str, default="ff++",
                         choices=["ff++", "celeb-df"],
                         help="Dataset to evaluate")
+    parser.add_argument("--test-list", "--tl", type=str, 
+                        default="Celeb-DF-v2/List_of_testing_videos.txt",
+                        help="Path to testing video list for Celeb-DF")
     parser.add_argument("--visualize", "--v", action="store_true",
                         help="Generate evaluation visualizations")
     parser.add_argument("--seed", type=int, default=42,
@@ -85,9 +88,10 @@ def get_dataloader(args):
     elif args.dataset == "celeb-df":
         dataset = CelebDFLoader(
             root=args.root,
-            split="test",
+            split=["test"],
             frame_count=args.frame_count,
-            transform=transforms['test']
+            transform=transforms['test'],
+            testing_file=args.test_list
         )
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")

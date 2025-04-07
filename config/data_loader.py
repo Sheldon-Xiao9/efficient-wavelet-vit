@@ -341,3 +341,196 @@ class CelebDFLoader(Dataset):
     """
     Celeb DFLoader - 加载视频数据集（CelebDF v2）
     """
+    def __init__(self,
+                 root,
+                 split=['train', 'test'],
+                 frame_count=24,
+                 transform=None,
+                 testing_file=None):
+        """
+        初始化CelebDFLoader
+        :param root: CelebDF数据集的根目录
+        :type root: str
+        :param split: 数据集的划分（train/test）
+        :type split: list
+        :param frame_count: 每个视频的帧数
+        :type frame_count: int
+        :param transform: 数据预处理
+        :type transform: callable
+        :param testing_file: 测试集划分文件路径
+        :type testing_file: str
+        """
+        super().__init__()
+        self.root = root
+        self.split = split
+        self.frame_count = frame_count
+        self.transform = transform
+        self.testing_file = testing_file
+        
+        self.real_videos, self.synthetic_videos = self._load_frames_dirs()
+        
+        print(f"Loaded {len(self.real_videos)} real videos and {len(self.synthetic_videos)} synthetic videos")
+        
+    def __len__(self):
+        """返回数据集大小"""
+        return len(self.real_videos) + len(self.synthetic_videos)
+    
+    def _load_split(self):
+        """
+        加载测试集划分文件，不在该范围内的为训练集
+        
+        :return: 返回真实与伪造视频ID字典（仅测试集）
+        :rtype: dict
+        """
+        if not os.path.exists(self.testing_file):
+            raise FileNotFoundError(f"Testing file '{self.testing_file}' not found")
+        
+        test_videos = {'real': [], 'fake': []}
+        skipped_youtube = 0
+        
+        with open(self.testing_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('//'):
+                    continue
+                
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                
+                label, video_path = parts[0], parts[1]
+                
+                # 跳过YouTube视频
+                if 'youtube' in video_path.lower():
+                    skipped_youtube += 1
+                    continue
+                
+                video_id = video_path.split('/')[-1].split('.')[0]  # 提取视频ID
+                
+                if label == '1' and 'celeb-real' in video_path.lower():
+                    test_videos['real'].append(video_id)
+                elif label == '0' and 'celeb-synthesis' in video_path.lower():
+                    test_videos['fake'].append(video_id)
+        
+        print(f"Skipped {skipped_youtube} YouTube videos")
+        return test_videos
+    
+    def _load_frames_dirs(self):
+        """
+        加载预载帧位置
+        
+        :return: 返回真实视频和伪造视频预载帧的路径``(real_videos, synthetic_videos)``
+        :rtype: tuple
+        
+        ``real_videos``
+            包含真实视频帧路径的列表
+        ``synthetic_videos``
+            包含伪造视频帧路径、方法和标签的字典列表
+        """
+        real_dir = os.path.join(self.root, 'celebdf/frames/Celeb-real')
+        synth_dir = os.path.join(self.root, 'celebdf/frames/Celeb-synthesis')
+        
+        if not os.path.exists(real_dir):
+            raise FileNotFoundError(f"Real videos frames directory '{real_dir}' not found")
+        if not os.path.exists(synth_dir):
+            raise FileNotFoundError(f"Synthetic videos frames directory '{synth_dir}' not found")
+        
+        # 加载所有可用的视频
+        all_real_videos = []
+        for video_id in os.listdir(real_dir):
+            frames_dir = os.path.join(real_dir, video_id)
+            if os.path.isdir(frames_dir):
+                all_real_videos.append((video_id, frames_dir))
+        
+        all_synthetic_videos = []
+        for video_id in os.listdir(synth_dir):
+            frames_dir = os.path.join(synth_dir, video_id)
+            if os.path.isdir(frames_dir):
+                all_synthetic_videos.append((video_id, frames_dir))
+                
+        # 加载测试集划分
+        test_videos = self._load_split() if self.testing_file else {'real': [], 'fake': []}
+        
+        # 基于split参数选择视频
+        real_videos = []
+        synthetic_videos = []
+        
+        if 'test' in self.split:
+            # 测试集
+            for video_id, path in all_real_videos:
+                if video_id in test_videos['real']:
+                    real_videos.append(path)
+                    
+            for video_id, path in all_synthetic_videos:
+                if video_id in test_videos['fake']:
+                    synthetic_videos.append(path)
+        else:
+            # 训练集
+            for video_id, path in all_real_videos:
+                if video_id not in test_videos['real'] and path not in real_videos:
+                    real_videos.append(path)
+            
+            for video_id, path in all_synthetic_videos:
+                if video_id not in test_videos['fake'] and path not in synthetic_videos:
+                    synthetic_videos.append(path)
+                    
+        return real_videos, synthetic_videos
+    
+    def __getitem__(self, index):
+        """
+        获取指定索引的样本
+        
+        :param index: 数据索引
+        :type index: int
+        :return: 返回帧与标签的元组``(frames, label)``
+        :rtype: tuple
+        
+        ``frames``
+            帧序列张量 (T x C x H x W)
+        ``label``
+            标签，0=真实，1=伪造
+        """
+        if index < len(self.real_videos):
+            # 真实视频
+            frames_dir = self.real_videos[index]
+            label = 0
+        else:
+            # 伪造视频
+            fake_index = index - len(self.real_videos)
+            if fake_index >= len(self.synthetic_videos):
+                raise IndexError(f"Index '{index}' out of range")
+            frames_dir = self.synthetic_videos[fake_index]
+            label = 1
+        
+        frame_files = sorted(glob.glob(os.path.join(frames_dir, '*.png')))
+        if not frame_files:
+            raise FileNotFoundError(f"No frames found in '{frames_dir}'")
+        
+        # 如果帧数超过需要的数量，选择均匀间隔的帧
+        if len(frame_files) > self.frame_count:
+            indices = np.linspace(0, len(frame_files) - 1, self.frame_count, dtype=int).tolist()
+            selected_files = [frame_files[i] for i in indices]
+        else:
+            # 帧数不足，全部使用并重复最后一帧
+            selected_files = frame_files
+            while len(selected_files) < self.frame_count:
+                selected_files.append(frame_files[-1])
+                
+        # 读取帧
+        frames = []
+        for file_path in selected_files:
+            img = cv2.imread(file_path)
+            if img is not None:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                frames.append(img)
+            else:
+                blank = np.zeros((224, 224, 3), dtype=np.uint8)
+                frames.append(blank)
+                
+        if self.transform:
+            frames = [self.transform(frame) for frame in frames]
+            
+        # 转换为张量 (T x C x H x W)
+        frames = torch.stack([frame for frame in frames if isinstance(frame, torch.Tensor)])
+        
+        return frames, label
