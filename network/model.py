@@ -24,19 +24,39 @@ class DeepfakeDetector(nn.Module):
         self.batch_size = batch_size
         
         # 消融配置
-        self.ablation_config = ['dynamic', 'space', 'freq']
+        self.ablation_config = ['dynamic', 'sfe_only', 'sfe_mwt']
+        
+        # 加载配置
+        with open('config/architecture.yaml', 'r') as f:
+            self.config = yaml.safe_load(f)
         
         # DAMA模块
         self.dama = DAMA(in_channels=in_channels, dim=dama_dim, num_heads=4, levels=3, batch_size=batch_size)
         
         self.mwt = MWT(in_channels=in_channels, dama_dim=dama_dim)
-        self.sfe = EfficientViT(config=yaml.safe_load(open('config/architecture.yaml', 'r')), channels=dama_dim, selected_efficient_net=0)
+        self.sfe = EfficientViT(
+            config=self.config,
+            channels=1280,
+            feat_dim=dama_dim,
+            selected_efficient_net=0
+        )
+        
+        self.sfe_cls = EfficientViT(
+            config=self.config,
+            channels=1280,
+            feat_dim=dama_dim,
+            selected_efficient_net=0,
+            output_mode='cls'
+        )
         
         # 特征融合层
         self.fusion_gate = nn.Sequential(
             nn.Linear(dama_dim*2, 2),
-            nn.Softmax(dim=1)
+            nn.ReLU(),
+            nn.Dropout(0.1)
         )
+        
+        self.feat_pooler = nn.AdaptiveAvgPool2d(1)
             
         # 分类层
         self.classifier = nn.Sequential(
@@ -56,11 +76,13 @@ class DeepfakeDetector(nn.Module):
         if ablation is not None:
             self.ablation = ablation
             
-        # DAMA特征
-        dama_feats = self.dama(x, batch_size=self.batch_size)
+        B, K, C, H, W = x.size()
         
         # 根据消融配置选择特征
         if self.ablation == 'dynamic':
+            # DAMA特征
+            dama_feats = self.dama(x, batch_size=self.batch_size)
+            
             # 使用融合特征
             fused_feats = dama_feats['fused']
             space_feats = dama_feats['space']
@@ -74,35 +96,64 @@ class DeepfakeDetector(nn.Module):
                 'space': space_feats,
                 'freq': freq_feats
             }
-        elif self.ablation == 'space':
-            # 使用空间特征
-            space_feats = dama_feats['space']
+        elif self.ablation == 'sfe_only':
+            all_logits = []
             
-            logits = self.classifier(space_feats)
+            for start_idx in range(0, K, self.batch_size):
+                end_idx = min(start_idx + self.batch_size, K)
+                batch_frames = x[:, start_idx:end_idx].flatten(0, 1)
+                
+                logits = self.sfe_cls(batch_frames)
+                logits = logits.view(B, -1, 1)
+                all_logits.append(logits)
+                
+            # 拼接所有帧的logits
+            all_logits = torch.cat(all_logits, dim=1)
+            final_logits = all_logits.mean(dim=1)
+            
+            return {
+                'logits': final_logits,
+                'model': 'sfe_only'
+            }
+        elif self.ablation == 'sfe_mwt':
+            # 简单拼接融合
+            sfe_features = []
+            mwt_features = []
+            
+            for start_idx in range(0, K, self.batch_size):
+                end_idx = min(start_idx + self.batch_size, K)
+                batch_frames = x[:, start_idx:end_idx].flatten(0, 1)
+                
+                # SFE特征
+                sfe_feats = self.sfe(batch_frames)
+                sfe_feats = self.feat_pooler(sfe_feats).squeeze(-1).squeeze(-1)
+                sfe_feats = sfe_feats.view(B, -1, self.dama_dim)
+                sfe_features.append(sfe_feats)
+                
+                # MWT特征
+                mwt_feats = self.mwt(batch_frames)
+                mwt_feats = mwt_feats.squeeze(-1).squeeze(-1)
+                mwt_feats = mwt_feats.view(B, -1, self.dama_dim)
+                mwt_features.append(mwt_feats)
+            
+            # 拼接所有帧的特征
+            sfe_features = torch.cat(sfe_features, dim=1).mean(dim=1)
+            mwt_features = torch.cat(mwt_features, dim=1).mean(dim=1)
+            
+            # 特征融合
+            combined = torch.cat([sfe_features, mwt_features], dim=1)
+            fused = self.fusion_gate(combined)
+            
+            # 分类
+            logits = self.classifier(fused)
             
             return {
                 'logits': logits,
-                'space': space_feats
+                'sfe': sfe_features,
+                'mwt': mwt_features,
+                'model': 'sfe_mwt'
             }
-        elif self.ablation == 'freq':
-            # 使用频域特征
-            freq_feats = dama_feats['freq']
-            
-            logits = self.classifier(freq_feats)
-            
-            return {
-                'logits': logits,
-                'freq': freq_feats
-            }
-        else:
-            # 使用融合特征
-            fused_feats = dama_feats['fused']
-            logits = self.classifier(fused_feats)
-            
-            return {
-                'logits': logits,
-                'fused': fused_feats
-            }
+                
         
     def configure_ablation(self, ablation):
         """

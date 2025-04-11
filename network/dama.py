@@ -11,7 +11,7 @@ from network.sfe import EfficientViT
 
 os.environ['TORCH_USE_CUDA_DSA'] = '1'
 
-# 自定义交叉注意力模块
+# 交叉注意力模块
 class CrossAttention(nn.Module):
     def __init__(self, dim, heads=8, dim_head=64, dropout=0.):
         super().__init__()

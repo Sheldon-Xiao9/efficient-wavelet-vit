@@ -176,7 +176,7 @@ class EfficientViT(nn.Module):
 if __name__=="__main__":
     with open('config/architecture.yaml', 'r') as ymlfile:
         config = yaml.safe_load(ymlfile)
-    model = EfficientViT(config=config, channels=1280, selected_efficient_net=1)
+    model = EfficientViT(config=config, channels=1280, selected_efficient_net=0, feat_dim=128, output_mode='feature_map')
     model.eval()
     img = torch.rand(8, 3, 224, 224)
     with torch.no_grad():
