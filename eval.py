@@ -58,13 +58,13 @@ def load_model(model_path, dim=128, device="cuda"):
     model = DeepfakeDetector(in_channels=3, dama_dim=dim).to(device)
     
     try:
-        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
     except:
         checkpoint = torch.load(model_path, map_location=device)
         if 'model_state_dict' in checkpoint:
-            model.load_state_dict(checkpoint['model_state_dict'])
+            model.load_state_dict(checkpoint['model_state_dict'], strict=False)
         elif 'state_dict' in checkpoint:
-            model.load_state_dict(checkpoint['state_dict'])
+            model.load_state_dict(checkpoint['state_dict'], strict=False)
         else:
             raise ValueError(f"Could not load model from {model_path}")
         
