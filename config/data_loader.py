@@ -253,8 +253,8 @@ class FaceForensicsLoader(Dataset):
                 relative_epoch = epoch - (max_epochs * early_stage)
                 transition_epochs = max_epochs * (late_stage - early_stage)
                 progress_ratio = min(1.0, relative_epoch / transition_epochs)
-                self.fixed_sample_ratio = max(0.3, 1.0 - progress_ratio)
-                self.novelty_ratio = min(0.8, progress_ratio)
+                self.fixed_sample_ratio = max(0.0, 1.0 - progress_ratio)
+                self.novelty_ratio = min(1.0, progress_ratio)
                 
                 print(f"  - Fixed sample ratio: {self.fixed_sample_ratio:.2f}")
                 print(f"  - Novelty ratio: {self.novelty_ratio:.2f}")

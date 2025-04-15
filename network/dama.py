@@ -31,7 +31,7 @@ class CrossAttention(nn.Module):
         ) if project_out else nn.Identity()
 
     def forward(self, x: torch.Tensor, context=None, kv_include_self=False):
-        b, n, _, h = *x.shape, self.heads
+        B, N, _, H = *x.shape, self.heads
         
         context = context if context is not None else x
         
@@ -41,7 +41,7 @@ class CrossAttention(nn.Module):
         q = self.to_q(x)
         k, v = self.to_kv(context).chunk(2, dim=-1)
         
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h=h), (q, k, v))
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h=H), (q, k, v))
         
         dots = torch.einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
         
