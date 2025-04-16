@@ -1,6 +1,7 @@
 import torch
 import yaml # type: ignore
 from torch import nn
+from torch.nn import functional as F
 from network.dama import DAMA
 from network.mwt import MWT
 from network.sfe import EfficientViT
@@ -142,7 +143,12 @@ class DeepfakeDetector(nn.Module):
             
             # 特征融合
             combined = torch.cat([sfe_features, mwt_features], dim=1)
-            fused = self.fusion_gate(combined)
+            gate_weights = self.fusion_gate(combined)
+            gate_weights = F.softmax(gate_weights, dim=1)
+            
+            weighted_sfe = sfe_features * gate_weights[:, 0:1]
+            weighted_mwt = mwt_features * gate_weights[:, 1:2]
+            fused = weighted_sfe + weighted_mwt
             
             # 分类
             logits = self.classifier(fused)
