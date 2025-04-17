@@ -46,6 +46,10 @@ def parse_args():
     parser.add_argument("--test-list", "--tl", type=str, 
                         default="Celeb-DF-v2/List_of_testing_videos.txt",
                         help="Path to testing video list for Celeb-DF")
+    parser.add_argument("--ablation", "-a", type=str, 
+                        default="dynamic",
+                        choices=["dynamic", "sfe_only", "sfe_mwt"],
+                        help="Ablation study type")
     parser.add_argument("--visualize", "--v", action="store_true",
                         help="Generate evaluation visualizations")
     parser.add_argument("--seed", type=int, default=42,
@@ -115,21 +119,30 @@ def evaluate(model, dataloader, device="cuda", args=None):
     
     print("Evaluating model on the test set...")
     
+    ablation_mode = args.ablation if hasattr(args, 'ablation') else 'dynamic'
+    print(f"Using ablation mode: {ablation_mode}")
+    
     with torch.no_grad():
         for frames, labels in tqdm(dataloader, desc="Testing"):
             frames = frames.to(device)
             labels = labels.to(device)
             
-            outputs = model(frames, batch_size=args.batch_size, ablation='dynamic')
+            outputs = model(frames, batch_size=args.batch_size, ablation=ablation_mode)
             
-            loss, losses = combined_loss(outputs, labels, criterion, epoch=1, max_epochs=1)
+            if ablation_mode == 'dynamic':
+                loss, losses = combined_loss(outputs, labels, criterion, epoch=1, max_epochs=1)
+                test_orth_loss.append(losses['orth_loss'])
+            else:
+                # 对于其他模式，使用简单的BCEWithLogitsLoss
+                loss = criterion(outputs['logits'].squeeze(), labels.float())
             test_loss += loss.item() * frames.size(0)
             
             # 收集预测结果
             probs = torch.sigmoid(outputs['logits']).detach().cpu().numpy()
             all_preds.extend(probs)
             all_labels.extend(labels.cpu().numpy())
-            test_orth_loss.append(losses['orth_loss'])
+            if ablation_mode == 'dynamic':
+                test_orth_loss.append(losses['orth_loss'])
             
     
     test_loss /= len(dataloader.dataset)
