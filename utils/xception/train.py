@@ -1,6 +1,5 @@
 import torch.multiprocessing as mp
 mp.set_start_method('spawn', force=True)
-mp.Queue(1000)
 
 import argparse
 import os
@@ -77,6 +76,8 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
                         output = output[1]  # 分类输出
                     
                     sample_outputs.append(output)
+                    
+                    del frame, output
                 
                 # 对单个样本的所有帧结果进行平均
                 sample_pred = torch.mean(torch.cat(sample_outputs, dim=0), dim=0, keepdim=True)
