@@ -2,7 +2,7 @@ import torch.multiprocessing as mp
 mp.set_start_method('spawn', force=True)
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 osenvs = len(os.environ['CUDA_VISIBLE_DEVICES'].split(','))
 import sys
 import time
