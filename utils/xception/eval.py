@@ -1,3 +1,6 @@
+import torch.multiprocessing as mp
+mp.set_start_method('spawn', force=True)
+
 import argparse
 import os
 import time
@@ -82,7 +85,7 @@ def load_model(model_path, device="cuda"):
 def get_dataloader(args, img_size):
     """获取数据加载器"""
     print(f"Loading {args.dataset} dataset...")
-    transforms = get_transforms(img_size)
+    transforms = get_transforms()
     
     if args.dataset == "ff++":
         dataset = FaceForensicsLoader(
