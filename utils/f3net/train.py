@@ -41,27 +41,49 @@ def train_epoch(model, dataloader, device, epoch):
     preds_all, labels_all = [], []
     
     for i, (data, label) in enumerate(tqdm(dataloader, desc=f"Epoch {epoch+1} Training")):
-        data, label = data.to(device), label.to(device).float()
+        batch_size = data.size(0)
+        label = label.to(device).float()
         
-        # 设置输入并优化
-        model.set_input(data, label)
-        loss = model.optimize_weight()
-        
-        # 更新步数计数器
-        model.total_steps += 1
-        
-        running_loss += loss.item() * data.size(0)
-        
-        # 收集预测和标签
-        with torch.no_grad():
-            _, output = model.model(data)
-            preds = torch.sigmoid(output).squeeze(1).detach().cpu().numpy()
-            preds_all.extend(preds)
+        # 处理多帧输入 [batch, frames, c, h, w]
+        if data.dim() == 5:
+            frame_count = data.size(1)
+            all_preds = []
+            total_loss = 0.0
+            
+            # 逐帧处理
+            for f in range(frame_count):
+                # 取所有样本的第f帧
+                frame_data = data[:, f].to(device)  # [batch, c, h, w]
+                
+                # 使用单帧进行训练
+                model.set_input(frame_data, label)
+                loss = model.optimize_weight()
+                total_loss += loss.item()
+                
+                # 收集单帧预测
+                with torch.no_grad():
+                    _, output = model.model(frame_data)
+                    frame_preds = torch.sigmoid(output).squeeze(1).cpu().numpy()
+                    all_preds.append(frame_preds)
+                
+                # 更新步数计数器
+                model.total_steps += 1
+                
+                # 每帧后清理缓存
+                del frame_data
+                torch.cuda.empty_cache()
+                
+                # 打印损失
+                if model.total_steps % loss_freq == 0:
+                    print(f'loss: {loss.item()} at step: {model.total_steps}, frame {f+1}/{frame_count}')
+            
+            # 计算平均损失和平均预测
+            running_loss += (total_loss / frame_count) * batch_size
+            
+            # 对所有帧的预测取平均
+            avg_preds = np.mean(np.array(all_preds), axis=0)
+            preds_all.extend(avg_preds)
             labels_all.extend(label.cpu().numpy())
-        
-        # 打印损失
-        if model.total_steps % loss_freq == 0:
-            print(f'loss: {loss.item()} at step: {model.total_steps}')
     
     # 计算指标
     epoch_loss = running_loss / len(dataloader.dataset)
@@ -74,12 +96,59 @@ def train_epoch(model, dataloader, device, epoch):
         'acc': epoch_acc
     }
 
-def val_epoch(model, dataset_path, device, mode='valid'):
+def val_epoch(model, dataloader, device, mode='valid'):
     """
-    评估模型在验证或测试集上的性能
+    评估模型在验证或测试集上的性能 - 处理多帧输入
     """
     model.model.eval()
-    auc, r_acc, f_acc = evaluate(model, dataset_path, mode=mode)
+    preds_all, labels_all = [], []
+    
+    with torch.no_grad():
+        for data, label in tqdm(dataloader, desc=f"Evaluating ({mode})"):
+            batch_size = data.size(0)
+            label = label.to(device).float()
+            
+            # 处理多帧输入 [batch, frames, c, h, w]
+            if data.dim() == 5:
+                frame_count = data.size(1)
+                all_preds = []
+                
+                # 逐帧处理
+                for f in range(frame_count):
+                    # 取所有样本的第f帧
+                    frame_data = data[:, f].to(device)  # [batch, c, h, w]
+                    
+                    # 获取预测
+                    _, output = model.model(frame_data)
+                    frame_preds = torch.sigmoid(output).squeeze(1).cpu().numpy()
+                    all_preds.append(frame_preds)
+                    
+                    # 清理缓存
+                    del frame_data
+                    torch.cuda.empty_cache()
+                
+                # 对所有帧的预测取平均
+                avg_preds = np.mean(np.array(all_preds), axis=0)
+                preds_all.extend(avg_preds)
+                labels_all.extend(label.cpu().numpy())
+    
+    # 计算指标
+    auc = roc_auc_score(labels_all, preds_all)
+    
+    # 计算真实和虚假样本的准确率
+    binary_preds = [1 if p >= 0.5 else 0 for p in preds_all]
+    real_indices = [i for i, l in enumerate(labels_all) if l == 0]
+    fake_indices = [i for i, l in enumerate(labels_all) if l == 1]
+    
+    real_preds = [binary_preds[i] for i in real_indices]
+    fake_preds = [binary_preds[i] for i in fake_indices]
+    
+    real_labels = [labels_all[i] for i in real_indices]
+    fake_labels = [labels_all[i] for i in fake_indices]
+    
+    r_acc = accuracy_score(real_labels, real_preds) if real_indices else 0.0
+    f_acc = accuracy_score(fake_labels, fake_preds) if fake_indices else 0.0
+    
     return {
         'auc': auc,
         'r_acc': r_acc,
@@ -112,7 +181,7 @@ if __name__ == '__main__':
         dataset=train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=8,
+        num_workers=2,
         pin_memory=True
     )
     
@@ -128,7 +197,7 @@ if __name__ == '__main__':
         dataset=val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=8,
+        num_workers=2,
         pin_memory=True
     )
     
@@ -159,20 +228,19 @@ if __name__ == '__main__':
                     f'auc: {train_metrics["auc"]:.4f}, acc: {train_metrics["acc"]:.4f}')
         
         # 每10%的训练进度进行一次评估
-        val_metrics = val_epoch(model, dataset_path, device, mode='valid')
+        val_metrics = val_epoch(model, val_loader, device, mode='valid')
         logger.debug(f'(Val @ epoch {epoch+1}) auc: {val_metrics["auc"]:.4f}, '
                     f'r_acc: {val_metrics["r_acc"]:.4f}, f_acc: {val_metrics["f_acc"]:.4f}')
         
-        test_metrics = val_epoch(model, dataset_path, device, mode='test')
-        logger.debug(f'(Test @ epoch {epoch+1}) auc: {test_metrics["auc"]:.4f}, '
-                    f'r_acc: {test_metrics["r_acc"]:.4f}, f_acc: {test_metrics["f_acc"]:.4f}')
+        # test_metrics = val_epoch(model, test_loader, device, mode='test')
+        # logger.debug(f'(Test @ epoch {epoch+1}) auc: {test_metrics["auc"]:.4f}, '
+        #             f'r_acc: {test_metrics["r_acc"]:.4f}, f_acc: {test_metrics["f_acc"]:.4f}')
         
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': model.model.state_dict(),
             'optimizer_state_dict': model.optimizer.state_dict() if hasattr(model, 'optimizer') else None,
             'best_val_auc': best_val_auc,
-            'test_metrics': test_metrics,
             'val_metrics': val_metrics,
             'train_metrics': train_metrics
         }
@@ -186,7 +254,23 @@ if __name__ == '__main__':
             logger.debug(f"New best model saved with AUC: {best_val_auc:.4f}")
     
     # 最终测试
+    test_dataset = FaceForensicsLoader(
+        root=dataset_path,
+        split='test',
+        frame_count=frame_num,
+        transform=transforms['test']
+    )
+    
+    test_loader = torch.utils.data.DataLoader(
+        dataset=test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=2,
+        pin_memory=True
+    )
+    logger.debug(f"Test Dataset: {len(test_dataset)}")
+    
     model.model.eval()
-    final_metrics = val_epoch(model, dataset_path, device, mode='test')
+    final_metrics = val_epoch(model, test_loader, device, mode='test')
     logger.debug(f'(Final Test) auc: {final_metrics["auc"]:.4f}, '
                 f'r_acc: {final_metrics["r_acc"]:.4f}, f_acc: {final_metrics["f_acc"]:.4f}')
