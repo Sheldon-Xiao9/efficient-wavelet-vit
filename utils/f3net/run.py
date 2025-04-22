@@ -1,17 +1,20 @@
 import os
 import sys
 
+# 获取当前文件的目录
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# 获取项目根目录（往上两级）
+project_root = os.path.dirname(os.path.dirname(current_dir))
+
 # 将项目根目录添加到Python路径
-sys.path.insert(0, os.path.abspath('.'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-# 导入并运行F3Net训练模块
-from utils.f3net import train
-
-# 执行训练主函数
+# 直接执行train.py而不是导入它
 if __name__ == "__main__":
-    if hasattr(train, 'main'):
-        train.main()
-    else:
-        # 如果没有main函数，执行train.py中的__main__部分
-        import runpy
-        runpy.run_module('utils.f3net.train', run_name='__main__')
+    # 获取train.py的完整路径
+    train_path = os.path.join(current_dir, "train.py")
+    
+    # 执行train.py
+    with open(train_path, 'r') as file:
+        exec(compile(file.read(), train_path, 'exec'))
