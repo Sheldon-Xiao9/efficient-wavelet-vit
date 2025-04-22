@@ -3,6 +3,7 @@ mp.set_start_method('spawn', force=True)
 
 import argparse
 import os
+import sys
 import time
 import torch
 import random
@@ -13,6 +14,8 @@ from tqdm import tqdm
 from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_auc_score, accuracy_score
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 from utils.xception.models import model_selection
 from config.data_loader import FaceForensicsLoader
