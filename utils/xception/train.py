@@ -85,14 +85,6 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
             # 合并批次中所有样本的预测
             outputs = torch.cat(all_outputs, dim=0)
             
-        else:  # 单帧输入 [batch, channels, height, width]
-            frames = frames.to(device)
-            outputs = model(frames)
-            
-            # 处理元组输出
-            if isinstance(outputs, tuple):
-                outputs = outputs[1]  # 分类输出
-            
         # 计算损失和反向传播
         loss = criterion(outputs, labels.unsqueeze(1))
         optimizer.zero_grad()
@@ -130,7 +122,7 @@ def val_epoch(model, dataloader, criterion, device):
             batch_size = frames.size(0)
             labels = labels.to(device).float()
             
-            if frames.dim() == 5:  # [batch, frames, channels, height, width]
+            if frames.dim() == 5:
                 # 处理所有帧并聚合结果
                 frame_count = frames.size(1)
                 all_outputs = []
@@ -154,14 +146,6 @@ def val_epoch(model, dataloader, criterion, device):
                 
                 # 合并批次中所有样本的预测
                 outputs = torch.cat(all_outputs, dim=0)
-                
-            else:  # 单帧输入 [batch, channels, height, width]
-                frames = frames.to(device)
-                outputs = model(frames)
-                
-                # 处理元组输出
-                if isinstance(outputs, tuple):
-                    outputs = outputs[1]  # 分类输出
                 
             loss = criterion(outputs, labels.unsqueeze(1))
             running_loss += loss.item() * batch_size
