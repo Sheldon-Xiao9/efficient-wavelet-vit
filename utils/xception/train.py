@@ -53,31 +53,56 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
     preds_all, labels_all = [], []
     
     for i, (frames, labels) in enumerate(tqdm(dataloader, desc="Training iteration")):
-        # 对于Xception，一次处理一帧
+        batch_loss = 0.0
+        batch_size = frames.size(0)
+        labels = labels.to(device).float()
+        
         if frames.dim() == 5:  # [batch, frames, channels, height, width]
-            frames = frames[:, 0]  # 取第一帧
-        
-        frames, labels = frames.to(device), labels.to(device)
-        
-        optimizer.zero_grad()
-        outputs = model(frames)
-        labels = labels.float()
-        
-        # 处理模型可能输出的元组
-        if isinstance(outputs, tuple):
-            outputs = outputs[1]  # 分类输出
+            # 处理所有帧并聚合结果
+            frame_count = frames.size(1)
+            all_outputs = []
             
+            # 处理批次中的每个样本的所有帧
+            for b in range(batch_size):
+                sample_outputs = []
+                for f in range(frame_count):
+                    frame = frames[b, f].unsqueeze(0).to(device)  # [1, C, H, W]
+                    output = model(frame)
+                    
+                    # 处理元组输出
+                    if isinstance(output, tuple):
+                        output = output[1]  # 分类输出
+                    
+                    sample_outputs.append(output)
+                
+                # 对单个样本的所有帧结果进行平均
+                sample_pred = torch.mean(torch.cat(sample_outputs, dim=0), dim=0, keepdim=True)
+                all_outputs.append(sample_pred)
+            
+            # 合并批次中所有样本的预测
+            outputs = torch.cat(all_outputs, dim=0)
+            
+        else:  # 单帧输入 [batch, channels, height, width]
+            frames = frames.to(device)
+            outputs = model(frames)
+            
+            # 处理元组输出
+            if isinstance(outputs, tuple):
+                outputs = outputs[1]  # 分类输出
+            
+        # 计算损失和反向传播
         loss = criterion(outputs, labels.unsqueeze(1))
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         
-        running_loss += loss.item() * frames.size(0)
+        running_loss += loss.item() * batch_size
         
         # 分类预测
         preds = torch.sigmoid(outputs).squeeze(1).detach().cpu().numpy()
         preds_all.extend(preds)
         labels_all.extend(labels.cpu().numpy())
-        
+    
     # 计算指标
     epoch_loss = running_loss / len(dataloader.dataset)
     epoch_auc = roc_auc_score(labels_all, preds_all)
@@ -99,21 +124,44 @@ def val_epoch(model, dataloader, criterion, device):
     
     with torch.no_grad():
         for frames, labels in dataloader:
+            batch_size = frames.size(0)
+            labels = labels.to(device).float()
+            
             if frames.dim() == 5:  # [batch, frames, channels, height, width]
-                frames = frames[:, 0]  # 取第一帧
+                # 处理所有帧并聚合结果
+                frame_count = frames.size(1)
+                all_outputs = []
                 
-            frames, labels = frames.to(device), labels.to(device)
-            
-            outputs = model(frames)
-            labels = labels.float()
-            
-            # 处理模型可能输出的元组
-            if isinstance(outputs, tuple):
-                outputs = outputs[1]  # 分类输出
+                # 处理批次中的每个样本的所有帧
+                for b in range(batch_size):
+                    sample_outputs = []
+                    for f in range(frame_count):
+                        frame = frames[b, f].unsqueeze(0).to(device)  # [1, C, H, W]
+                        output = model(frame)
+                        
+                        # 处理元组输出
+                        if isinstance(output, tuple):
+                            output = output[1]  # 分类输出
+                        
+                        sample_outputs.append(output)
+                    
+                    # 对单个样本的所有帧结果进行平均
+                    sample_pred = torch.mean(torch.cat(sample_outputs, dim=0), dim=0, keepdim=True)
+                    all_outputs.append(sample_pred)
+                
+                # 合并批次中所有样本的预测
+                outputs = torch.cat(all_outputs, dim=0)
+                
+            else:  # 单帧输入 [batch, channels, height, width]
+                frames = frames.to(device)
+                outputs = model(frames)
+                
+                # 处理元组输出
+                if isinstance(outputs, tuple):
+                    outputs = outputs[1]  # 分类输出
                 
             loss = criterion(outputs, labels.unsqueeze(1))
-            
-            running_loss += loss.item() * frames.size(0)
+            running_loss += loss.item() * batch_size
             
             # 分类预测
             preds = torch.sigmoid(outputs).squeeze(1).detach().cpu().numpy()
