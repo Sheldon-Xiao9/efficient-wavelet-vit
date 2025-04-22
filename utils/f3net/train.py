@@ -19,14 +19,14 @@ from config.data_loader import FaceForensicsLoader
 from config.transforms import get_transforms
 
 # 原有的超参数配置
-dataset_path = '/data/yike/FF++_std_c40_300frames/'
+dataset_path = '/root/'
 pretrained_path = 'pretrained/xception-b5690688.pth'
 batch_size = 8
 gpu_ids = [*range(osenvs)]
 max_epoch = 30
 loss_freq = 40
 mode = 'FAD' # ['Original', 'FAD', 'LFS', 'Both', 'Mix']
-ckpt_dir = '/data/yike/checkpoints/F3Net'
+ckpt_dir = 'output/f3net'
 ckpt_name = 'FAD4_bz128'
 frame_num = 24
 
@@ -165,10 +165,22 @@ if __name__ == '__main__':
         logger.debug(f'(Test @ epoch {epoch+1}) auc: {test_metrics["auc"]:.4f}, '
                     f'r_acc: {test_metrics["r_acc"]:.4f}, f_acc: {test_metrics["f_acc"]:.4f}')
         
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.model.state_dict(),
+            'optimizer_state_dict': model.optimizer.state_dict() if hasattr(model, 'optimizer') else None,
+            'best_val_auc': best_val_auc,
+            'test_metrics': test_metrics,
+            'val_metrics': val_metrics,
+            'train_metrics': train_metrics
+        }
+        torch.save(checkpoint, os.path.join(ckpt_path, f'checkpoint_{epoch+1}.pkl'))
+        logger.debug(f"Saved checkpoint for epoch {epoch+1}")
+        
         # 保存最佳模型
         if val_metrics['auc'] > best_val_auc:
             best_val_auc = val_metrics['auc']
-            model.save(os.path.join(ckpt_path, ckpt_model_name))
+            torch.save(model.model.state_dict(), os.path.join(ckpt_path, 'best_model.pth'))
             logger.debug(f"New best model saved with AUC: {best_val_auc:.4f}")
     
     # 最终测试
