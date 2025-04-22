@@ -408,7 +408,7 @@ def ablation_experiment():
     metrics_df = create_metrics_table(test_results, output_dir)
     
     # 打印比较结果
-    print("\n消融实验结果比较:")
+    print("\nAblation Results Comparision:")
     print(metrics_df)
     
     # 保存配置

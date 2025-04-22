@@ -7,12 +7,12 @@ import argparse
 
 
 import torch
-import pretrainedmodels
+import pretrainedmodels # type: ignore
 import torch.nn as nn
 import torch.nn.functional as F
 from .xception import xception
 import math
-import torchvision
+import torchvision # type: ignore
 
 
 def return_pytorch04_xception(pretrained=True):

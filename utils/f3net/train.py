@@ -1,109 +1,178 @@
+import torch.multiprocessing as mp
+mp.set_start_method('spawn', force=True)
+
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 osenvs = len(os.environ['CUDA_VISIBLE_DEVICES'].split(','))
 import sys
 import time
 import torch
 import torch.nn
-
-from utils import evaluate, get_dataset, FFDataset, setup_logger
-from trainer import Trainer
-import numpy as np
 import random
+import numpy as np
+from tqdm import tqdm
+from sklearn.metrics import roc_auc_score, accuracy_score # type: ignore
 
-# config
+from utils import evaluate, setup_logger
+from trainer import Trainer
+from config.data_loader import FaceForensicsLoader
+from config.transforms import get_transforms
+
+# 原有的超参数配置
 dataset_path = '/data/yike/FF++_std_c40_300frames/'
 pretrained_path = 'pretrained/xception-b5690688.pth'
-batch_size = 12
+batch_size = 8
 gpu_ids = [*range(osenvs)]
-max_epoch = 5
+max_epoch = 30
 loss_freq = 40
 mode = 'FAD' # ['Original', 'FAD', 'LFS', 'Both', 'Mix']
 ckpt_dir = '/data/yike/checkpoints/F3Net'
 ckpt_name = 'FAD4_bz128'
+frame_num = 24
 
+def train_epoch(model, dataloader, device, epoch):
+    """
+    训练一个轮次
+    """
+    model.model.train()
+    running_loss = 0.0
+    preds_all, labels_all = [], []
+    
+    for i, (data, label) in enumerate(tqdm(dataloader, desc=f"Epoch {epoch+1} Training")):
+        data, label = data.to(device), label.to(device).float()
+        
+        # 设置输入并优化
+        model.set_input(data, label)
+        loss = model.optimize_weight()
+        
+        # 更新步数计数器
+        model.total_steps += 1
+        
+        running_loss += loss.item() * data.size(0)
+        
+        # 收集预测和标签
+        with torch.no_grad():
+            _, output = model.model(data)
+            preds = torch.sigmoid(output).squeeze(1).detach().cpu().numpy()
+            preds_all.extend(preds)
+            labels_all.extend(label.cpu().numpy())
+        
+        # 打印损失
+        if model.total_steps % loss_freq == 0:
+            print(f'loss: {loss.item()} at step: {model.total_steps}')
+    
+    # 计算指标
+    epoch_loss = running_loss / len(dataloader.dataset)
+    epoch_auc = roc_auc_score(labels_all, preds_all)
+    epoch_acc = accuracy_score(labels_all, [1 if p >= 0.5 else 0 for p in preds_all])
+    
+    return {
+        'loss': epoch_loss,
+        'auc': epoch_auc,
+        'acc': epoch_acc
+    }
+
+def val_epoch(model, dataset_path, device, mode='valid'):
+    """
+    评估模型在验证或测试集上的性能
+    """
+    model.model.eval()
+    auc, r_acc, f_acc = evaluate(model, dataset_path, mode=mode)
+    return {
+        'auc': auc,
+        'r_acc': r_acc,
+        'f_acc': f_acc
+    }
 
 if __name__ == '__main__':
-    dataset = FFDataset(dataset_root=os.path.join(dataset_path, 'train', 'real'), size=299, frame_num=300, augment=True)
-    dataloader_real = torch.utils.data.DataLoader(
-        dataset=dataset,
-        batch_size=batch_size // 2,
-        shuffle=True,
-        num_workers=8)
+    # 设置随机种子
+    random_seed = 42
+    random.seed(random_seed)
+    np.random.seed(random_seed)
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed_all(random_seed)
     
-    len_dataloader = dataloader_real.__len__()
-
-    dataset_img, total_len =  get_dataset(name='train', size=299, root=dataset_path, frame_num=300, augment=True)
-    dataloader_fake = torch.utils.data.DataLoader(
-        dataset=dataset_img,
-        batch_size=batch_size // 2,
-        shuffle=True,
-        num_workers=8
+    device = torch.device(f'cuda:{gpu_ids[0]}' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    
+    # 初始化数据加载器（使用FaceForensicsLoader替代原有的FFDataset）
+    transforms = get_transforms()
+    
+    # 训练集
+    train_dataset = FaceForensicsLoader(
+        root=dataset_path,
+        split='train',
+        frame_count=frame_num,
+        transform=transforms['train']
     )
+    
+    train_loader = torch.utils.data.DataLoader(
+        dataset=train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=8,
+        pin_memory=True
+    )
+    
+    # 验证集
+    val_dataset = FaceForensicsLoader(
+        root=dataset_path,
+        split='val',
+        frame_count=frame_num,
+        transform=transforms['val']
+    )
+    
+    val_loader = torch.utils.data.DataLoader(
+        dataset=val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=8,
+        pin_memory=True
+    )
+    
+    print(f"Train Dataset: {len(train_dataset)}, Val Dataset: {len(val_dataset)}")
 
-    # init checkpoint and logger
+    # 初始化检查点和日志
     ckpt_path = os.path.join(ckpt_dir, ckpt_name)
+    os.makedirs(ckpt_path, exist_ok=True)
     logger = setup_logger(ckpt_path, 'result.log', 'logger')
-    best_val = 0.
+    best_val_auc = 0.
     ckpt_model_name = 'best.pkl'
     
-    # train
+    # 初始化模型
     model = Trainer(gpu_ids, mode, pretrained_path)
     model.total_steps = 0
-    epoch = 0
     
-    while epoch < max_epoch:
-
-        fake_iter = iter(dataloader_fake)
-        real_iter = iter(dataloader_real)
+    # 开始训练
+    for epoch in range(max_epoch):
+        logger.debug(f'Epoch {epoch+1}/{max_epoch}')
         
-        logger.debug(f'No {epoch}')
-        i = 0
-
-        while i < len_dataloader:
-            
-            i += 1
-            model.total_steps += 1
-
-            try:
-                data_real = real_iter.next()
-                data_fake = fake_iter.next()
-            except StopIteration:
-                break
-            # -------------------------------------------------
-            
-            if data_real.shape[0] != data_fake.shape[0]:
-                continue
-
-            bz = data_real.shape[0]
-            
-            data = torch.cat([data_real,data_fake],dim=0)
-            label = torch.cat([torch.zeros(bz).unsqueeze(dim=0),torch.ones(bz).unsqueeze(dim=0)],dim=1).squeeze(dim=0)
-
-            # manually shuffle
-            idx = list(range(data.shape[0]))
-            random.shuffle(idx)
-            data = data[idx]
-            label = label[idx]
-
-            data = data.detach()
-            label = label.detach()
-
-            model.set_input(data,label)
-            loss = model.optimize_weight()
-
-            if model.total_steps % loss_freq == 0:
-                logger.debug(f'loss: {loss} at step: {model.total_steps}')
-
-            if i % int(len_dataloader / 10) == 0:
-                model.model.eval()
-                auc, r_acc, f_acc = evaluate(model, dataset_path, mode='valid')
-                logger.debug(f'(Val @ epoch {epoch}) auc: {auc}, r_acc: {r_acc}, f_acc:{f_acc}')
-                auc, r_acc, f_acc = evaluate(model, dataset_path, mode='test')
-                logger.debug(f'(Test @ epoch {epoch}) auc: {auc}, r_acc: {r_acc}, f_acc:{f_acc}')
-                model.model.train()
-        epoch = epoch + 1
-
+        # 更新采样策略
+        train_dataset.update_sampling_strategy(epoch, max_epoch)
+        val_dataset.update_sampling_strategy(epoch, max_epoch)
+        
+        # 训练
+        train_metrics = train_epoch(model, train_loader, device, epoch)
+        logger.debug(f'(Train @ epoch {epoch+1}) loss: {train_metrics["loss"]:.4f}, '
+                    f'auc: {train_metrics["auc"]:.4f}, acc: {train_metrics["acc"]:.4f}')
+        
+        # 每10%的训练进度进行一次评估
+        val_metrics = val_epoch(model, dataset_path, device, mode='valid')
+        logger.debug(f'(Val @ epoch {epoch+1}) auc: {val_metrics["auc"]:.4f}, '
+                    f'r_acc: {val_metrics["r_acc"]:.4f}, f_acc: {val_metrics["f_acc"]:.4f}')
+        
+        test_metrics = val_epoch(model, dataset_path, device, mode='test')
+        logger.debug(f'(Test @ epoch {epoch+1}) auc: {test_metrics["auc"]:.4f}, '
+                    f'r_acc: {test_metrics["r_acc"]:.4f}, f_acc: {test_metrics["f_acc"]:.4f}')
+        
+        # 保存最佳模型
+        if val_metrics['auc'] > best_val_auc:
+            best_val_auc = val_metrics['auc']
+            model.save(os.path.join(ckpt_path, ckpt_model_name))
+            logger.debug(f"New best model saved with AUC: {best_val_auc:.4f}")
+    
+    # 最终测试
     model.model.eval()
-    auc, r_acc, f_acc = evaluate(model, dataset_path, mode='test')
-    logger.debug(f'(Test @ epoch {epoch}) auc: {auc}, r_acc: {r_acc}, f_acc:{f_acc}')
+    final_metrics = val_epoch(model, dataset_path, device, mode='test')
+    logger.debug(f'(Final Test) auc: {final_metrics["auc"]:.4f}, '
+                f'r_acc: {final_metrics["r_acc"]:.4f}, f_acc: {final_metrics["f_acc"]:.4f}')
