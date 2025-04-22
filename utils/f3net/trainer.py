@@ -1,7 +1,11 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import torch
 import torch.nn as nn
 from torch.nn import parameter
-from models import F3Net
+from utils.f3net.models import F3Net
 import torch.nn.functional as F
 import numpy as np
 import os

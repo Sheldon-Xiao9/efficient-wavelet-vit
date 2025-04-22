@@ -1,4 +1,8 @@
-from .xception import Xception
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from utils.f3net.xception import Xception
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
