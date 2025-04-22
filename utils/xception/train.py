@@ -49,50 +49,61 @@ def parse_args():
 
 def train_epoch(model, dataloader, criterion, optimizer, device):
     """
-    训练一个轮次
+    训练一个轮次 - 优化内存使用
     """
     model.train()
     running_loss = 0.0
     preds_all, labels_all = [], []
     
     for i, (frames, labels) in enumerate(tqdm(dataloader, desc="Training iteration")):
-        batch_loss = 0.0
         batch_size = frames.size(0)
         labels = labels.to(device).float()
         
         if frames.dim() == 5:  # [batch, frames, channels, height, width]
-            # 处理所有帧并聚合结果
+            # 内存优化版本：一次处理一个样本的所有帧
             frame_count = frames.size(1)
             all_outputs = []
             
-            # 处理批次中的每个样本的所有帧
+            # 批次分割处理，避免OOM
             for b in range(batch_size):
                 sample_outputs = []
-                for f in range(frame_count):
-                    frame = frames[b, f].unsqueeze(0).to(device)  # [1, C, H, W]
-                    output = model(frame)
+                # 分批处理一个样本的帧以减少内存使用
+                frame_batch_size = 4  # 根据GPU内存调整此值
+                for f_start in range(0, frame_count, frame_batch_size):
+                    f_end = min(f_start + frame_batch_size, frame_count)
                     
-                    # 处理元组输出
-                    if isinstance(output, tuple):
-                        output = output[1]  # 分类输出
-                    
-                    sample_outputs.append(output)
+                    # 清除缓存，释放内存
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        
+                    # 处理这批帧
+                    frame_batch_outputs = []
+                    for f in range(f_start, f_end):
+                        frame = frames[b, f].unsqueeze(0).to(device)
+                        output = model(frame)
+                        
+                        if isinstance(output, tuple):
+                            output = output[1]  # 分类输出
+                        
+                        frame_batch_outputs.append(output)
+                        
+                        # 立即将不需要的数据移出GPU
+                        frame = frame.cpu()
+                        
+                    # 处理完这批帧后聚合结果
+                    sample_outputs.extend(frame_batch_outputs)
                 
-                # 对单个样本的所有帧结果进行平均
-                sample_pred = torch.mean(torch.cat(sample_outputs, dim=0), dim=0, keepdim=True)
+                # 对所有帧结果进行平均
+                stacked_outputs = torch.cat(sample_outputs, dim=0)
+                sample_pred = torch.mean(stacked_outputs, dim=0, keepdim=True)
                 all_outputs.append(sample_pred)
-            
+                
+                # 移除不再需要的变量
+                del sample_outputs, stacked_outputs
+                
             # 合并批次中所有样本的预测
             outputs = torch.cat(all_outputs, dim=0)
-            
-        else:  # 单帧输入 [batch, channels, height, width]
-            frames = frames.to(device)
-            outputs = model(frames)
-            
-            # 处理元组输出
-            if isinstance(outputs, tuple):
-                outputs = outputs[1]  # 分类输出
-            
+        
         # 计算损失和反向传播
         loss = criterion(outputs, labels.unsqueeze(1))
         optimizer.zero_grad()
@@ -105,6 +116,11 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
         preds = torch.sigmoid(outputs).squeeze(1).detach().cpu().numpy()
         preds_all.extend(preds)
         labels_all.extend(labels.cpu().numpy())
+        
+        # 主动清理内存
+        del frames, outputs, loss
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     
     # 计算指标
     epoch_loss = running_loss / len(dataloader.dataset)
@@ -119,7 +135,7 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
     
 def val_epoch(model, dataloader, criterion, device):
     """
-    验证一个轮次
+    验证一个轮次 - 优化内存使用
     """
     model.eval()
     running_loss = 0.0
@@ -130,46 +146,56 @@ def val_epoch(model, dataloader, criterion, device):
             batch_size = frames.size(0)
             labels = labels.to(device).float()
             
-            if frames.dim() == 5:  # [batch, frames, channels, height, width]
-                # 处理所有帧并聚合结果
+            if frames.dim() == 5:  # 多帧输入
                 frame_count = frames.size(1)
                 all_outputs = []
                 
-                # 处理批次中的每个样本的所有帧
                 for b in range(batch_size):
                     sample_outputs = []
-                    for f in range(frame_count):
-                        frame = frames[b, f].unsqueeze(0).to(device)  # [1, C, H, W]
-                        output = model(frame)
+                    # 分批处理帧
+                    frame_batch_size = 4
+                    for f_start in range(0, frame_count, frame_batch_size):
+                        f_end = min(f_start + frame_batch_size, frame_count)
                         
-                        # 处理元组输出
-                        if isinstance(output, tuple):
-                            output = output[1]  # 分类输出
-                        
-                        sample_outputs.append(output)
+                        # 清除缓存
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            
+                        # 处理这批帧
+                        frame_batch_outputs = []
+                        for f in range(f_start, f_end):
+                            frame = frames[b, f].unsqueeze(0).to(device)
+                            output = model(frame)
+                            
+                            if isinstance(output, tuple):
+                                output = output[1]
+                            
+                            frame_batch_outputs.append(output)
+                            frame = frame.cpu()  # 释放内存
+                            
+                        sample_outputs.extend(frame_batch_outputs)
                     
-                    # 对单个样本的所有帧结果进行平均
-                    sample_pred = torch.mean(torch.cat(sample_outputs, dim=0), dim=0, keepdim=True)
+                    # 平均所有帧结果
+                    stacked_outputs = torch.cat(sample_outputs, dim=0)
+                    sample_pred = torch.mean(stacked_outputs, dim=0, keepdim=True)
                     all_outputs.append(sample_pred)
+                    
+                    # 清理
+                    del sample_outputs, stacked_outputs
                 
-                # 合并批次中所有样本的预测
                 outputs = torch.cat(all_outputs, dim=0)
-                
-            else:  # 单帧输入 [batch, channels, height, width]
-                frames = frames.to(device)
-                outputs = model(frames)
-                
-                # 处理元组输出
-                if isinstance(outputs, tuple):
-                    outputs = outputs[1]  # 分类输出
-                
+            
             loss = criterion(outputs, labels.unsqueeze(1))
             running_loss += loss.item() * batch_size
             
-            # 分类预测
             preds = torch.sigmoid(outputs).squeeze(1).detach().cpu().numpy()
             preds_all.extend(preds)
             labels_all.extend(labels.cpu().numpy())
+            
+            # 清理
+            del frames, outputs, loss
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
     
     # 计算指标
     epoch_loss = running_loss / len(dataloader.dataset)
