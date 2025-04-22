@@ -73,9 +73,9 @@ def train_epoch(model, dataloader, device, epoch):
                 del frame_data
                 torch.cuda.empty_cache()
                 
-                # 打印损失
-                if model.total_steps % loss_freq == 0:
-                    print(f'loss: {loss.item()} at step: {model.total_steps}, frame {f+1}/{frame_count}')
+                # # 打印损失
+                # if model.total_steps % loss_freq == 0:
+                #     print(f'loss: {loss.item()} at step: {model.total_steps}, frame {f+1}/{frame_count}')
             
             # 计算平均损失和平均预测
             running_loss += (total_loss / frame_count) * batch_size
