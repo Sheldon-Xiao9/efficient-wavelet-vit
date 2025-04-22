@@ -13,10 +13,8 @@ import numpy as np
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score, accuracy_score # type: ignore
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from utils.f3net.utils import evaluate, setup_logger
-from utils.f3net.trainer import Trainer
+from utils import evaluate, setup_logger
+from trainer import Trainer
 from config.data_loader import FaceForensicsLoader
 from config.transforms import get_transforms
 
