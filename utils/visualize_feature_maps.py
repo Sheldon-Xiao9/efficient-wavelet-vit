@@ -99,13 +99,13 @@ def main(img_path, save_dir):
     model.eval()
     model.to(DEVICE)
 
-    # 注册空间分支早期特征（EfficientNet-b0最后一层block）
+    # 注册空间分支早期特征（EfficientNet-b0 features前几层）
     if hasattr(model.sfe, "efficient_net"):
         print("[DEBUG] efficient_net children:", list(model.sfe.efficient_net.named_children()))
-        if hasattr(model.sfe.efficient_net, "_blocks"):
-            model.sfe.efficient_net._blocks[-1].register_forward_hook(save_feature_map('early_space'))
-            model.sfe.efficient_net._blocks[-2].register_forward_hook(save_feature_map('early_space2'))
-            model.sfe.efficient_net._blocks[-3].register_forward_hook(save_feature_map('early_space3'))
+        if hasattr(model.sfe.efficient_net, "features"):
+            model.sfe.efficient_net.features[0].register_forward_hook(save_feature_map('early_space_f0'))
+            model.sfe.efficient_net.features[1].register_forward_hook(save_feature_map('early_space_f1'))
+            model.sfe.efficient_net.features[2].register_forward_hook(save_feature_map('early_space_f2'))
     # 注册频域分支早期特征（MWT第一层卷积）
     if hasattr(model.mwt, "dwt"):
         # 只抓取wavelet_transform的高频输出
@@ -129,24 +129,24 @@ def main(img_path, save_dir):
     print("[DEBUG] space feature shape:", feature_maps['space'][0].shape)
     print("[DEBUG] freq feature shape:", feature_maps['freq'][0].shape)
     print("[DEBUG] fusion feature shape:", feature_maps['fusion'][0].shape)
-    if 'early_space' in feature_maps:
-        print("[DEBUG] early_space feature shape:", feature_maps['early_space'][0].shape)
-    if 'early_space2' in feature_maps:
-        print("[DEBUG] early_space2 feature shape:", feature_maps['early_space2'][0].shape)
-    if 'early_space3' in feature_maps:
-        print("[DEBUG] early_space3 feature shape:", feature_maps['early_space3'][0].shape)
+    if 'early_space_f0' in feature_maps:
+        print("[DEBUG] early_space_f0 feature shape:", feature_maps['early_space_f0'][0].shape)
+    if 'early_space_f1' in feature_maps:
+        print("[DEBUG] early_space_f1 feature shape:", feature_maps['early_space_f1'][0].shape)
+    if 'early_space_f2' in feature_maps:
+        print("[DEBUG] early_space_f2 feature shape:", feature_maps['early_space_f2'][0].shape)
     if 'early_freq' in feature_maps:
         print("[DEBUG] early_freq feature shape:", feature_maps['early_freq'][0].shape)
 
     show_feature_map_on_image(vis_img, feature_maps['space'][0], 'Space Feature', os.path.join(save_dir, 'space_feature.png'))
     show_feature_map_on_image(vis_img, feature_maps['freq'][0], 'Freq Feature', os.path.join(save_dir, 'freq_feature.png'))
     show_feature_map_on_image(vis_img, feature_maps['fusion'][0], 'Fusion Feature', os.path.join(save_dir, 'fusion_feature.png'))
-    if 'early_space' in feature_maps:
-        show_feature_map_on_image(vis_img, feature_maps['early_space'][0], 'EfficientNet-b0 Block[-1]', os.path.join(save_dir, 'efficientnet_b0_block-1.png'))
-    if 'early_space2' in feature_maps:
-        show_feature_map_on_image(vis_img, feature_maps['early_space2'][0], 'EfficientNet-b0 Block[-2]', os.path.join(save_dir, 'efficientnet_b0_block-2.png'))
-    if 'early_space3' in feature_maps:
-        show_feature_map_on_image(vis_img, feature_maps['early_space3'][0], 'EfficientNet-b0 Block[-3]', os.path.join(save_dir, 'efficientnet_b0_block-3.png'))
+    if 'early_space_f0' in feature_maps:
+        show_feature_map_on_image(vis_img, feature_maps['early_space_f0'][0], 'EfficientNet-b0 features[0]', os.path.join(save_dir, 'efficientnet_b0_features0.png'))
+    if 'early_space_f1' in feature_maps:
+        show_feature_map_on_image(vis_img, feature_maps['early_space_f1'][0], 'EfficientNet-b0 features[1]', os.path.join(save_dir, 'efficientnet_b0_features1.png'))
+    if 'early_space_f2' in feature_maps:
+        show_feature_map_on_image(vis_img, feature_maps['early_space_f2'][0], 'EfficientNet-b0 features[2]', os.path.join(save_dir, 'efficientnet_b0_features2.png'))
     if 'early_freq' in feature_maps:
         show_feature_map_on_image(vis_img, feature_maps['early_freq'][0], 'MWT Wavelet HF', os.path.join(save_dir, 'mwt_wavelet_hf.png'))
     if 'cross_attn_space2freq' in attention_weights:
