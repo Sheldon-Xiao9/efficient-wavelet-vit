@@ -33,24 +33,24 @@ def deepfake_per_frame_eval(model, dataloader, device, args):
     all_labels = []
     with torch.no_grad():
         for frames, labels in dataloader:
-            # frames: [B, N, C, H, W] or [B, C, H, W]
+            # frames: [B, N, C, H, W]
             if frames.dim() == 5:
                 B, N, C, H, W = frames.shape
                 for b in range(B):
+                    label = labels[b].item()
                     for n in range(N):
-                        input_frame = frames[b, n].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
-                        label = labels[b].item()
-                        outputs = model(input_frame, batch_size=1, ablation=args.ablation)
+                        single_frame = frames[b, n].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
+                        outputs = model(single_frame, batch_size=1, ablation=args.ablation)
                         prob = torch.sigmoid(outputs['logits']).cpu().numpy().flatten()[0]
                         all_preds.append(prob)
                         all_labels.append(label)
             elif frames.dim() == 4:
-                # [B, C, H, W]
+                # [B, C, H, W] (should not happen for per-frame, but fallback)
                 B, C, H, W = frames.shape
                 for b in range(B):
-                    input_frame = frames[b].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
+                    single_frame = frames[b].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
                     label = labels[b].item()
-                    outputs = model(input_frame, batch_size=1, ablation=args.ablation)
+                    outputs = model(single_frame, batch_size=1, ablation=args.ablation)
                     prob = torch.sigmoid(outputs['logits']).cpu().numpy().flatten()[0]
                     all_preds.append(prob)
                     all_labels.append(label)
@@ -62,26 +62,26 @@ def xception_per_frame_eval(model, dataloader, device):
     model.eval()
     all_preds = []
     all_labels = []
-    import torch.nn.functional as F
     with torch.no_grad():
         for frames, labels in dataloader:
-            # frames: [B, N, C, H, W] or [B, C, H, W]
+            # frames: [B, N, C, H, W]
             if frames.dim() == 5:
                 B, N, C, H, W = frames.shape
                 for b in range(B):
+                    label = labels[b].item()
                     for n in range(N):
-                        input_frame = frames[b, n].unsqueeze(0).to(device)  # [1, C, H, W]
-                        label = labels[b].item()
-                        outputs = model(input_frame)
+                        single_frame = frames[b, n].unsqueeze(0).to(device)  # [1, C, H, W]
+                        outputs = model(single_frame)
                         prob = torch.sigmoid(outputs).cpu().numpy().flatten()[0]
                         all_preds.append(prob)
                         all_labels.append(label)
             elif frames.dim() == 4:
+                # [B, C, H, W] (should not happen for per-frame, but fallback)
                 B, C, H, W = frames.shape
                 for b in range(B):
-                    input_frame = frames[b].unsqueeze(0).to(device)  # [1, C, H, W]
+                    single_frame = frames[b].unsqueeze(0).to(device)  # [1, C, H, W]
                     label = labels[b].item()
-                    outputs = model(input_frame)
+                    outputs = model(single_frame)
                     prob = torch.sigmoid(outputs).cpu().numpy().flatten()[0]
                     all_preds.append(prob)
                     all_labels.append(label)
@@ -110,8 +110,8 @@ def main():
             data_args = DummyArgs()
             data_args.root = args.root
             data_args.dataset = 'celeb-df'
-            data_args.frame_count = 1 if args.per_frame else args.frame_count
-            data_args.batch_size = 1 if args.per_frame else args.batch_size
+            data_args.frame_count = args.frame_count
+            data_args.batch_size = args.batch_size
             data_args.test_list = args.test_list
             data_args.ablation = args.ablation
 
@@ -123,6 +123,7 @@ def main():
             model = load_deepfake_model(model_path, dim=args.dim, device=device)
             if args.per_frame:
                 preds, labels_arr = deepfake_per_frame_eval(model, dataloader, device, data_args)
+                print(f"[{label}] Per-frame mode: total frames={len(preds)}, total labels={len(labels_arr)}")
             else:
                 metrics, preds, labels_arr = evaluate_deepfake(model, dataloader, device=device, args=data_args)
         elif model_type.lower() == 'xception':
@@ -131,8 +132,8 @@ def main():
             data_args = DummyArgs()
             data_args.root = args.root
             data_args.dataset = 'celeb-df'
-            data_args.frame_count = 1 if args.per_frame else args.frame_count
-            data_args.batch_size = 1 if args.per_frame else args.batch_size
+            data_args.frame_count = args.frame_count
+            data_args.batch_size = args.batch_size
             data_args.test_list = args.test_list
 
             cache_key = ('xception', args.root, args.test_list, data_args.frame_count, data_args.batch_size)
@@ -143,6 +144,7 @@ def main():
             model, _ = load_xception_model(model_path, device=device)
             if args.per_frame:
                 preds, labels_arr = xception_per_frame_eval(model, dataloader, device)
+                print(f"[{label}] Per-frame mode: total frames={len(preds)}, total labels={len(labels_arr)}")
             else:
                 metrics, preds, labels_arr = evaluate_xception(model, dataloader, device=device)
         else:
