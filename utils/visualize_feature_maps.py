@@ -104,6 +104,8 @@ def main(img_path, save_dir):
         print("[DEBUG] efficient_net children:", list(model.sfe.efficient_net.named_children()))
         if hasattr(model.sfe.efficient_net, "_blocks"):
             model.sfe.efficient_net._blocks[-1].register_forward_hook(save_feature_map('early_space'))
+            model.sfe.efficient_net._blocks[-2].register_forward_hook(save_feature_map('early_space2'))
+            model.sfe.efficient_net._blocks[-3].register_forward_hook(save_feature_map('early_space3'))
     # 注册频域分支早期特征（MWT第一层卷积）
     if hasattr(model.mwt, "dwt"):
         # 只抓取wavelet_transform的高频输出
@@ -129,6 +131,10 @@ def main(img_path, save_dir):
     print("[DEBUG] fusion feature shape:", feature_maps['fusion'][0].shape)
     if 'early_space' in feature_maps:
         print("[DEBUG] early_space feature shape:", feature_maps['early_space'][0].shape)
+    if 'early_space2' in feature_maps:
+        print("[DEBUG] early_space2 feature shape:", feature_maps['early_space2'][0].shape)
+    if 'early_space3' in feature_maps:
+        print("[DEBUG] early_space3 feature shape:", feature_maps['early_space3'][0].shape)
     if 'early_freq' in feature_maps:
         print("[DEBUG] early_freq feature shape:", feature_maps['early_freq'][0].shape)
 
@@ -136,7 +142,11 @@ def main(img_path, save_dir):
     show_feature_map_on_image(vis_img, feature_maps['freq'][0], 'Freq Feature', os.path.join(save_dir, 'freq_feature.png'))
     show_feature_map_on_image(vis_img, feature_maps['fusion'][0], 'Fusion Feature', os.path.join(save_dir, 'fusion_feature.png'))
     if 'early_space' in feature_maps:
-        show_feature_map_on_image(vis_img, feature_maps['early_space'][0], 'EfficientNet-b0 Feature', os.path.join(save_dir, 'efficientnet_b0_feature.png'))
+        show_feature_map_on_image(vis_img, feature_maps['early_space'][0], 'EfficientNet-b0 Block[-1]', os.path.join(save_dir, 'efficientnet_b0_block-1.png'))
+    if 'early_space2' in feature_maps:
+        show_feature_map_on_image(vis_img, feature_maps['early_space2'][0], 'EfficientNet-b0 Block[-2]', os.path.join(save_dir, 'efficientnet_b0_block-2.png'))
+    if 'early_space3' in feature_maps:
+        show_feature_map_on_image(vis_img, feature_maps['early_space3'][0], 'EfficientNet-b0 Block[-3]', os.path.join(save_dir, 'efficientnet_b0_block-3.png'))
     if 'early_freq' in feature_maps:
         show_feature_map_on_image(vis_img, feature_maps['early_freq'][0], 'MWT Wavelet HF', os.path.join(save_dir, 'mwt_wavelet_hf.png'))
     if 'cross_attn_space2freq' in attention_weights:
