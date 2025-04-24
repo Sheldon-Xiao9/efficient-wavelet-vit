@@ -10,6 +10,8 @@ from network.sfe import EfficientViT
 from network.mwt import MWT
 
 import yaml  # type: ignore
+from config.transforms import get_transforms
+from PIL import Image # type: ignore
 
 # 配置
 MODEL_PATH = 'pretrained/xception-b5690688.pth'  # 替换为模型权重路径
@@ -92,9 +94,18 @@ def main(img_path, save_dir):
     # 读取图片
     img = cv2.imread(img_path)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img_tensor = torch.from_numpy(img_rgb).float().permute(2,0,1).unsqueeze(0) / 255.
-    img_tensor = torch.nn.functional.interpolate(img_tensor, size=(224,224), mode='bilinear')
-    img_tensor = img_tensor.to(DEVICE)
+    # 应用transform
+    transforms_dict = get_transforms()
+    test_transform = transforms_dict['test']
+    img_pil = Image.fromarray(img_rgb)
+    img_tensor = test_transform(img_pil).unsqueeze(0).to(DEVICE)
+    # 用于可视化的transform后帧
+    vis_img = img_tensor[0].cpu().clone()
+    # 逆归一化
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    vis_img = vis_img.permute(1,2,0).numpy() * std + mean
+    vis_img = np.clip(vis_img * 255, 0, 255).astype(np.uint8)
 
     # 加载模型
     with open(ARCH_PATH, 'r') as f:
@@ -121,13 +132,13 @@ def main(img_path, save_dir):
         _ = model._process_frame(img_tensor)
 
     # 可视化
-    show_feature_map_on_image(img, feature_maps['space'][0], 'Space Feature', os.path.join(save_dir, 'space_feature.png'))
-    show_feature_map_on_image(img, feature_maps['freq'][0], 'Freq Feature', os.path.join(save_dir, 'freq_feature.png'))
-    show_feature_map_on_image(img, feature_maps['fusion'][0], 'Fusion Feature', os.path.join(save_dir, 'fusion_feature.png'))
+    show_feature_map_on_image(vis_img, feature_maps['space'][0], 'Space Feature', os.path.join(save_dir, 'space_feature.png'))
+    show_feature_map_on_image(vis_img, feature_maps['freq'][0], 'Freq Feature', os.path.join(save_dir, 'freq_feature.png'))
+    show_feature_map_on_image(vis_img, feature_maps['fusion'][0], 'Fusion Feature', os.path.join(save_dir, 'fusion_feature.png'))
     if 'cross_attn_space2freq' in attention_weights:
-        show_attention(attention_weights['cross_attn_space2freq'], img, 'Cross Attention (Space->Freq)', os.path.join(save_dir, 'cross_attention_space2freq.png'))
+        show_attention(attention_weights['cross_attn_space2freq'], vis_img, 'Cross Attention (Space->Freq)', os.path.join(save_dir, 'cross_attention_space2freq.png'))
     if 'cross_attn_freq2space' in attention_weights:
-        show_attention(attention_weights['cross_attn_freq2space'], img, 'Cross Attention (Freq->Space)', os.path.join(save_dir, 'cross_attention_freq2space.png'))
+        show_attention(attention_weights['cross_attn_freq2space'], vis_img, 'Cross Attention (Freq->Space)', os.path.join(save_dir, 'cross_attention_freq2space.png'))
 
     print(f'Visualization results saved to: {save_dir}')
 
