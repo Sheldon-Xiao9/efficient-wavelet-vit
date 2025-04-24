@@ -24,7 +24,70 @@ def parse_args():
     parser.add_argument('--frame-count', type=int, default=30, help='Number of frames per video')
     parser.add_argument('--ablation', type=str, default='dynamic', choices=['dynamic', 'sfe_only', 'sfe_mwt'], help='Ablation mode (for deepfake)')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device')
+    parser.add_argument('--per-frame', action='store_true', help='Evaluate per frame (B=1, N=1) for smoother ROC')
     return parser.parse_args()
+
+def deepfake_per_frame_eval(model, dataloader, device, args):
+    model.eval()
+    all_preds = []
+    all_labels = []
+    with torch.no_grad():
+        for frames, labels in dataloader:
+            # frames: [B, N, C, H, W] or [B, C, H, W]
+            if frames.dim() == 5:
+                B, N, C, H, W = frames.shape
+                for b in range(B):
+                    for n in range(N):
+                        input_frame = frames[b, n].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
+                        label = labels[b].item()
+                        outputs = model(input_frame, batch_size=1, ablation=args.ablation)
+                        prob = torch.sigmoid(outputs['logits']).cpu().numpy().flatten()[0]
+                        all_preds.append(prob)
+                        all_labels.append(label)
+            elif frames.dim() == 4:
+                # [B, C, H, W]
+                B, C, H, W = frames.shape
+                for b in range(B):
+                    input_frame = frames[b].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
+                    label = labels[b].item()
+                    outputs = model(input_frame, batch_size=1, ablation=args.ablation)
+                    prob = torch.sigmoid(outputs['logits']).cpu().numpy().flatten()[0]
+                    all_preds.append(prob)
+                    all_labels.append(label)
+            else:
+                raise ValueError("Unsupported frame shape for deepfake model.")
+    return np.array(all_preds), np.array(all_labels)
+
+def xception_per_frame_eval(model, dataloader, device):
+    model.eval()
+    all_preds = []
+    all_labels = []
+    import torch.nn.functional as F
+    with torch.no_grad():
+        for frames, labels in dataloader:
+            # frames: [B, N, C, H, W] or [B, C, H, W]
+            if frames.dim() == 5:
+                B, N, C, H, W = frames.shape
+                for b in range(B):
+                    for n in range(N):
+                        input_frame = frames[b, n].unsqueeze(0).to(device)  # [1, C, H, W]
+                        label = labels[b].item()
+                        outputs = model(input_frame)
+                        prob = torch.sigmoid(outputs).cpu().numpy().flatten()[0]
+                        all_preds.append(prob)
+                        all_labels.append(label)
+            elif frames.dim() == 4:
+                B, C, H, W = frames.shape
+                for b in range(B):
+                    input_frame = frames[b].unsqueeze(0).to(device)  # [1, C, H, W]
+                    label = labels[b].item()
+                    outputs = model(input_frame)
+                    prob = torch.sigmoid(outputs).cpu().numpy().flatten()[0]
+                    all_preds.append(prob)
+                    all_labels.append(label)
+            else:
+                raise ValueError("Unsupported frame shape for xception model.")
+    return np.array(all_preds), np.array(all_labels)
 
 def main():
     args = parse_args()
@@ -35,7 +98,6 @@ def main():
     labels = args.labels if args.labels and len(args.labels) == len(model_paths) else [f'Model{i+1}' for i in range(len(model_paths))]
     device = args.device
 
-    # 只加载一次dataloader，保证labels一致
     dataloader_cache = {}
     labels_cache = None
 
@@ -43,45 +105,46 @@ def main():
 
     for idx, (model_path, model_type, label) in enumerate(zip(model_paths, model_types, labels)):
         if model_type.lower() == 'deepfake':
-            # DeepfakeDetector
             class DummyArgs:
                 pass
             data_args = DummyArgs()
             data_args.root = args.root
             data_args.dataset = 'celeb-df'
-            data_args.frame_count = args.frame_count
-            data_args.batch_size = args.batch_size
+            data_args.frame_count = 1 if args.per_frame else args.frame_count
+            data_args.batch_size = 1 if args.per_frame else args.batch_size
             data_args.test_list = args.test_list
             data_args.ablation = args.ablation
 
-            # 缓存dataloader
-            cache_key = ('deepfake', args.root, args.test_list, args.frame_count, args.batch_size, args.ablation)
+            cache_key = ('deepfake', args.root, args.test_list, data_args.frame_count, data_args.batch_size, args.ablation)
             if cache_key not in dataloader_cache:
                 dataloader_cache[cache_key] = get_deepfake_dataloader(data_args)
             dataloader = dataloader_cache[cache_key]
 
             model = load_deepfake_model(model_path, dim=args.dim, device=device)
-            metrics, preds, labels_arr = evaluate_deepfake(model, dataloader, device=device, args=data_args)
+            if args.per_frame:
+                preds, labels_arr = deepfake_per_frame_eval(model, dataloader, device, data_args)
+            else:
+                metrics, preds, labels_arr = evaluate_deepfake(model, dataloader, device=device, args=data_args)
         elif model_type.lower() == 'xception':
-            # Xception
             class DummyArgs:
                 pass
             data_args = DummyArgs()
             data_args.root = args.root
             data_args.dataset = 'celeb-df'
-            data_args.frame_count = args.frame_count
-            data_args.batch_size = args.batch_size
+            data_args.frame_count = 1 if args.per_frame else args.frame_count
+            data_args.batch_size = 1 if args.per_frame else args.batch_size
             data_args.test_list = args.test_list
 
-            # 缓存dataloader
-            cache_key = ('xception', args.root, args.test_list, args.frame_count, args.batch_size)
+            cache_key = ('xception', args.root, args.test_list, data_args.frame_count, data_args.batch_size)
             if cache_key not in dataloader_cache:
-                # 需img_size，但Xception模型加载时才有，先用299
                 dataloader_cache[cache_key] = get_xception_dataloader(data_args, img_size=299)
             dataloader = dataloader_cache[cache_key]
 
             model, _ = load_xception_model(model_path, device=device)
-            metrics, preds, labels_arr = evaluate_xception(model, dataloader, device=device)
+            if args.per_frame:
+                preds, labels_arr = xception_per_frame_eval(model, dataloader, device)
+            else:
+                metrics, preds, labels_arr = evaluate_xception(model, dataloader, device=device)
         else:
             raise ValueError(f"Unknown model type: {model_type}")
 
