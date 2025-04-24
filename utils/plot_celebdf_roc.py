@@ -39,33 +39,36 @@ def deepfake_per_frame_eval(model, dataloader, device, args):
             total_frames += frames.shape[0] * frames.shape[1]
         elif frames.dim() == 4:
             total_frames += frames.shape[0]
-    # 重新遍历
-    idx = 0
+    # 重新遍历，单一tqdm进度条
     with torch.no_grad():
-        for frames, labels in dataloader:
-            if frames.dim() == 5:
-                B, N, C, H, W = frames.shape
-                for b in range(B):
-                    label = labels[b].item()
-                    for n in tqdm(range(N), desc=f"Deepfake Frame {idx+1}/{total_frames}"):
-                        single_frame = frames[b, n].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
+        idx = 0
+        with tqdm(total=total_frames, desc="Per-frame Inference") as pbar:
+            for frames, labels in dataloader:
+                if frames.dim() == 5:
+                    B, N, C, H, W = frames.shape
+                    for b in range(B):
+                        label = labels[b].item()
+                        for n in range(N):
+                            single_frame = frames[b, n].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
+                            outputs = model(single_frame, batch_size=1, ablation=args.ablation)
+                            prob = torch.sigmoid(outputs['logits']).cpu().numpy().flatten()[0]
+                            all_preds.append(prob)
+                            all_labels.append(label)
+                            idx += 1
+                            pbar.update(1)
+                elif frames.dim() == 4:
+                    B, C, H, W = frames.shape
+                    for b in range(B):
+                        single_frame = frames[b].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
+                        label = labels[b].item()
                         outputs = model(single_frame, batch_size=1, ablation=args.ablation)
                         prob = torch.sigmoid(outputs['logits']).cpu().numpy().flatten()[0]
                         all_preds.append(prob)
                         all_labels.append(label)
                         idx += 1
-            elif frames.dim() == 4:
-                B, C, H, W = frames.shape
-                for b in tqdm(range(B), desc=f"Deepfake Frame {idx+1}/{total_frames}"):
-                    single_frame = frames[b].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
-                    label = labels[b].item()
-                    outputs = model(single_frame, batch_size=1, ablation=args.ablation)
-                    prob = torch.sigmoid(outputs['logits']).cpu().numpy().flatten()[0]
-                    all_preds.append(prob)
-                    all_labels.append(label)
-                    idx += 1
-            else:
-                raise ValueError("Unsupported frame shape for deepfake model.")
+                        pbar.update(1)
+                else:
+                    raise ValueError("Unsupported frame shape for deepfake model.")
     return np.array(all_preds), np.array(all_labels)
 
 def xception_per_frame_eval(model, dataloader, device):
@@ -78,32 +81,35 @@ def xception_per_frame_eval(model, dataloader, device):
             total_frames += frames.shape[0] * frames.shape[1]
         elif frames.dim() == 4:
             total_frames += frames.shape[0]
-    idx = 0
     with torch.no_grad():
-        for frames, labels in dataloader:
-            if frames.dim() == 5:
-                B, N, C, H, W = frames.shape
-                for b in range(B):
-                    label = labels[b].item()
-                    for n in tqdm(range(N), desc=f"Xception Frame {idx+1}/{total_frames}"):
-                        single_frame = frames[b, n].unsqueeze(0).to(device)  # [1, C, H, W]
+        idx = 0
+        with tqdm(total=total_frames, desc="Per-frame Inference") as pbar:
+            for frames, labels in dataloader:
+                if frames.dim() == 5:
+                    B, N, C, H, W = frames.shape
+                    for b in range(B):
+                        label = labels[b].item()
+                        for n in range(N):
+                            single_frame = frames[b, n].unsqueeze(0).to(device)  # [1, C, H, W]
+                            outputs = model(single_frame)
+                            prob = torch.sigmoid(outputs).cpu().numpy().flatten()[0]
+                            all_preds.append(prob)
+                            all_labels.append(label)
+                            idx += 1
+                            pbar.update(1)
+                elif frames.dim() == 4:
+                    B, C, H, W = frames.shape
+                    for b in range(B):
+                        single_frame = frames[b].unsqueeze(0).to(device)  # [1, C, H, W]
+                        label = labels[b].item()
                         outputs = model(single_frame)
                         prob = torch.sigmoid(outputs).cpu().numpy().flatten()[0]
                         all_preds.append(prob)
                         all_labels.append(label)
                         idx += 1
-            elif frames.dim() == 4:
-                B, C, H, W = frames.shape
-                for b in tqdm(range(B), desc=f"Xception Frame {idx+1}/{total_frames}"):
-                    single_frame = frames[b].unsqueeze(0).to(device)  # [1, C, H, W]
-                    label = labels[b].item()
-                    outputs = model(single_frame)
-                    prob = torch.sigmoid(outputs).cpu().numpy().flatten()[0]
-                    all_preds.append(prob)
-                    all_labels.append(label)
-                    idx += 1
-            else:
-                raise ValueError("Unsupported frame shape for xception model.")
+                        pbar.update(1)
+                else:
+                    raise ValueError("Unsupported frame shape for xception model.")
     return np.array(all_preds), np.array(all_labels)
 
 def main():
