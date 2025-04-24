@@ -46,6 +46,8 @@ def parse_args():
                         help="Gradient accumulation steps")
     parser.add_argument("--multi-gpu", "--mg", action="store_true",
                         help="Use multiple GPUs for training")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Path to checkpoint to resume from")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed")
     return parser.parse_args()
@@ -270,6 +272,16 @@ def main():
     criterion = BCEWithLogitsLoss(pos_weight=alpha)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-7)
+    
+    if args.resume is not None and os.path.isfile(args.resume):
+        print(f"Resuming from checkpoint: {args.resume}")
+        checkpoint = torch.load(args.resume, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_epoch = checkpoint.get('epoch', 0) + 1
+        best_val_auc = checkpoint.get('best_val_auc', 0.0)
+        print(f"Resumed at epoch {start_epoch}, best_val_auc={best_val_auc}")
     
     best_val_auc = 0.0
     for epoch in range(args.epochs):
