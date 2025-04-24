@@ -97,8 +97,8 @@ def main(img_path, save_dir):
     # 应用transform
     transforms_dict = get_transforms()
     test_transform = transforms_dict['test']
-    img_pil = Image.fromarray(img_rgb)
-    img_tensor = test_transform(img_pil).unsqueeze(0).to(DEVICE)
+    # 兼容 ToPILImage，直接传 numpy 数组
+    img_tensor = test_transform(img_rgb).unsqueeze(0).to(DEVICE)
     # 用于可视化的transform后帧
     vis_img = img_tensor[0].cpu().clone()
     # 逆归一化
