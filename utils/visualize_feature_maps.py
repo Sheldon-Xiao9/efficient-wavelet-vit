@@ -75,18 +75,13 @@ def show_feature_map_on_image(img, fmap, title, save_path):
 def show_attention(attn, img, title, save_path):
     # attn: [B, heads, N, N]，N=patch数
     attn = attn.mean(1)[0]  # 取第一个样本，所有 head 平均
-    attn_map = attn.mean(0).numpy()  # [N]
-    size = int(np.sqrt(attn_map.shape[0]))
-    attn_map = attn_map.reshape(size, size)
-    attn_map = (attn_map - attn_map.min()) / (attn_map.max() - attn_map.min() + 1e-8)
-    attn_map = cv2.resize(attn_map, (img.shape[1], img.shape[0]))
-    heatmap = cv2.applyColorMap(np.uint8(255 * attn_map), cv2.COLORMAP_JET)
-    overlay = cv2.addWeighted(img, 0.5, heatmap, 0.5, 0)
+    attn_map = attn.mean(0).cpu().numpy()  # [N]
     plt.figure()
-    plt.title(title)
-    plt.axis('off')
-    plt.imshow(overlay[..., ::-1])
-    plt.savefig(save_path, bbox_inches='tight')
+    plt.title(title + " (1D)")
+    plt.plot(attn_map)
+    plt.xlabel("Patch Index")
+    plt.ylabel("Attention Weight")
+    plt.savefig(save_path.replace('.png', '_1d.png'), bbox_inches='tight')
     plt.close()
 
 def main(img_path, save_dir):
