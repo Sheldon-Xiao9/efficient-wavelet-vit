@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc # type: ignore
 import torch
+from tqdm import tqdm
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -31,29 +32,38 @@ def deepfake_per_frame_eval(model, dataloader, device, args):
     model.eval()
     all_preds = []
     all_labels = []
+    # 预统计总帧数
+    total_frames = 0
+    for frames, _ in dataloader:
+        if frames.dim() == 5:
+            total_frames += frames.shape[0] * frames.shape[1]
+        elif frames.dim() == 4:
+            total_frames += frames.shape[0]
+    # 重新遍历
+    idx = 0
     with torch.no_grad():
         for frames, labels in dataloader:
-            # frames: [B, N, C, H, W]
             if frames.dim() == 5:
                 B, N, C, H, W = frames.shape
                 for b in range(B):
                     label = labels[b].item()
-                    for n in range(N):
+                    for n in tqdm(range(N), desc=f"Deepfake Frame {idx+1}/{total_frames}"):
                         single_frame = frames[b, n].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
                         outputs = model(single_frame, batch_size=1, ablation=args.ablation)
                         prob = torch.sigmoid(outputs['logits']).cpu().numpy().flatten()[0]
                         all_preds.append(prob)
                         all_labels.append(label)
+                        idx += 1
             elif frames.dim() == 4:
-                # [B, C, H, W] (should not happen for per-frame, but fallback)
                 B, C, H, W = frames.shape
-                for b in range(B):
+                for b in tqdm(range(B), desc=f"Deepfake Frame {idx+1}/{total_frames}"):
                     single_frame = frames[b].unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, C, H, W]
                     label = labels[b].item()
                     outputs = model(single_frame, batch_size=1, ablation=args.ablation)
                     prob = torch.sigmoid(outputs['logits']).cpu().numpy().flatten()[0]
                     all_preds.append(prob)
                     all_labels.append(label)
+                    idx += 1
             else:
                 raise ValueError("Unsupported frame shape for deepfake model.")
     return np.array(all_preds), np.array(all_labels)
@@ -62,29 +72,36 @@ def xception_per_frame_eval(model, dataloader, device):
     model.eval()
     all_preds = []
     all_labels = []
+    total_frames = 0
+    for frames, _ in dataloader:
+        if frames.dim() == 5:
+            total_frames += frames.shape[0] * frames.shape[1]
+        elif frames.dim() == 4:
+            total_frames += frames.shape[0]
+    idx = 0
     with torch.no_grad():
         for frames, labels in dataloader:
-            # frames: [B, N, C, H, W]
             if frames.dim() == 5:
                 B, N, C, H, W = frames.shape
                 for b in range(B):
                     label = labels[b].item()
-                    for n in range(N):
+                    for n in tqdm(range(N), desc=f"Xception Frame {idx+1}/{total_frames}"):
                         single_frame = frames[b, n].unsqueeze(0).to(device)  # [1, C, H, W]
                         outputs = model(single_frame)
                         prob = torch.sigmoid(outputs).cpu().numpy().flatten()[0]
                         all_preds.append(prob)
                         all_labels.append(label)
+                        idx += 1
             elif frames.dim() == 4:
-                # [B, C, H, W] (should not happen for per-frame, but fallback)
                 B, C, H, W = frames.shape
-                for b in range(B):
+                for b in tqdm(range(B), desc=f"Xception Frame {idx+1}/{total_frames}"):
                     single_frame = frames[b].unsqueeze(0).to(device)  # [1, C, H, W]
                     label = labels[b].item()
                     outputs = model(single_frame)
                     prob = torch.sigmoid(outputs).cpu().numpy().flatten()[0]
                     all_preds.append(prob)
                     all_labels.append(label)
+                    idx += 1
             else:
                 raise ValueError("Unsupported frame shape for xception model.")
     return np.array(all_preds), np.array(all_labels)
