@@ -99,9 +99,11 @@ def main(img_path, save_dir):
     model.eval()
     model.to(DEVICE)
 
-    # 注册空间分支早期特征（EfficientNet-b0最后一层）
+    # 注册空间分支早期特征（EfficientNet-b0最后一层block）
     if hasattr(model.sfe, "efficient_net"):
-        model.sfe.efficient_net.extract_features.register_forward_hook(save_feature_map('early_space'))
+        print("[DEBUG] efficient_net children:", list(model.sfe.efficient_net.named_children()))
+        if hasattr(model.sfe.efficient_net, "_blocks"):
+            model.sfe.efficient_net._blocks[-1].register_forward_hook(save_feature_map('early_space'))
     # 注册频域分支早期特征（MWT第一层卷积）
     if hasattr(model.mwt, "dwt"):
         # 只抓取wavelet_transform的高频输出
