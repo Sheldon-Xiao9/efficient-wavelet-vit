@@ -25,10 +25,10 @@ def parse_args():
     parser.add_argument('--root', type=str, default='/path/to/dataset', help='Path to the dataset')
     parser.add_argument('--output', type=str, default='./output/ablation', help='Path to save the ablation output')
     parser.add_argument('--batch-size', type=int, default=8, help='Batch size for training and testing')
-    parser.add_argument('--epochs', type=int, default=10, help='Number of epochs for training')
+    parser.add_argument('--epochs', type=int, default=30, help='Number of epochs for training')
     parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate for the optimizer')
     parser.add_argument('--dim', type=int, default=128, help='Dimension of the DAMA module')
-    parser.add_argument('--frame-count', type=int, default=24, help='Number of frames per video')
+    parser.add_argument('--frame-count', type=int, default=300, help='Number of frames per video')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
     return parser.parse_args()
 

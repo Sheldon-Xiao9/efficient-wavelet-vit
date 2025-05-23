@@ -30,15 +30,15 @@ def parse_args():
                         help="Dataset root directory")
     parser.add_argument("--output", "--o", type=str, default="./output", 
                         help="Output directory")
-    parser.add_argument("--batch-size", "--bs", type=int, default=4,
+    parser.add_argument("--batch-size", "--bs", type=int, default=8,
                         help="Batch size")
-    parser.add_argument("--epochs", "--e", type=int, default=50,
+    parser.add_argument("--epochs", "--e", type=int, default=30,
                         help="Number of epochs")
     parser.add_argument("--lr", type=float, default=1e-4,
                         help="Learning rate")
     parser.add_argument("--dim", "--d", type=int, default=128,
                         help="Feature dimension")
-    parser.add_argument("--frame-count", "--fc", type=int, default=30,
+    parser.add_argument("--frame-count", "--fc", type=int, default=300,
                         help="Number of frames per video")
     parser.add_argument("--visualize", "--v", action="store_true",
                         help="Generate visualizations after training is done")

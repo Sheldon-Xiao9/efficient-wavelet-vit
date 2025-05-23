@@ -36,9 +36,9 @@ def parse_args():
                         help="Output directory for results")
     parser.add_argument("--batch-size", "--bs", type=int, default=8,
                         help="Batch size for evaluation")
-    parser.add_argument("--dim", "--d", type=int, default=128,
-                        help="Feature dimension")
-    parser.add_argument("--frame-count", "--fc", type=int, default=30,
+    # parser.add_argument("--dim", "--d", type=int, default=128,
+    #                     help="Feature dimension")
+    parser.add_argument("--frame-count", "--fc", type=int, default=300,
                         help="Number of frames per video")
     parser.add_argument("--dataset", "--ds", type=str, default="ff++",
                         choices=["ff++", "celeb-df"],
