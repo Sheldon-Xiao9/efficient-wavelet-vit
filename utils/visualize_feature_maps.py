@@ -81,14 +81,19 @@ def show_feature_map_side_by_side(img, fmap, title, save_path):
     fmap = fmap.numpy()
     fmap = (fmap - fmap.min()) / (fmap.max() - fmap.min() + 1e-8)
 
+    # For the vertical bar, resize it to match image height and give it some thickness
+    if fmap.ndim == 2 and fmap.shape[1] == 1:
+        bar_width = 32  # Make the bar thicker
+        fmap = cv2.resize(fmap, (bar_width, img.shape[0]), interpolation=cv2.INTER_NEAREST)
     # For 2D maps, resize to match image height for better visualization
-    if fmap.ndim == 2 and fmap.shape[1] > 1:
+    elif fmap.ndim == 2 and fmap.shape[1] > 1:
         fmap = cv2.resize(fmap, (fmap.shape[1], img.shape[0]))
 
     heatmap = cv2.applyColorMap(np.uint8(255 * fmap), cv2.COLORMAP_JET)
 
-    fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-    fig.suptitle(title)
+    # Adjust figure layout for better control over spacing and size
+    fig, axs = plt.subplots(1, 2, gridspec_kw={'width_ratios': [img.shape[1], heatmap.shape[1]]})
+    # fig.suptitle(title)
 
     axs[0].imshow(img)
     axs[0].axis('off')
@@ -98,12 +103,10 @@ def show_feature_map_side_by_side(img, fmap, title, save_path):
     axs[1].axis('off')
     # axs[1].set_title('Feature Map')
     
-    # Adjust aspect ratio for the vertical bar to make it look like a line
-    if fmap.shape[1] == 1:
-        aspect = fmap.shape[0] / (fmap.shape[1] * 20) # Make it tall and thin
-        axs[1].set_aspect(aspect)
+    # Reduce space between subplots to a minimum
+    plt.subplots_adjust(wspace=0.01, hspace=0)
 
-    plt.savefig(save_path, bbox_inches='tight')
+    plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
     plt.close(fig)
 
 def show_attention(attn, img, title, save_path):
