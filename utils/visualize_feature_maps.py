@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 
+from network.model import DeepfakeDetector
 from network.dama import DAMA
 from network.dama import CrossAttention
 from network.sfe import EfficientViT
@@ -12,6 +13,55 @@ from network.mwt import MWT
 import yaml  # type: ignore
 from config.transforms import get_transforms
 from PIL import Image # type: ignore
+
+# Grad-CAM实现
+class GradCAM:
+    def __init__(self, model, target_layer):
+        self.model = model
+        self.target_layer = target_layer
+        self.feature_maps = None
+        self.gradients = None
+        self.hooks = []
+
+        self._register_hooks()
+
+    def _register_hooks(self):
+        def forward_hook(module, input, output):
+            self.feature_maps = output
+
+        def backward_hook(module, grad_in, grad_out):
+            self.gradients = grad_out[0]
+
+        self.hooks.append(self.target_layer.register_forward_hook(forward_hook))
+        self.hooks.append(self.target_layer.register_backward_hook(backward_hook))
+
+    def __call__(self, x, class_idx=None):
+        self.model.zero_grad()
+        output = self.model(x, batch_size=1, ablation='dynamic')
+        logits = output['logits']
+
+        if class_idx is None:
+            class_idx = logits.argmax(dim=1).item()
+        
+        target = logits[:, class_idx]
+        target.backward()
+
+        if self.gradients is None or self.feature_maps is None:
+            raise RuntimeError("Could not retrieve gradients or feature maps. Check hooks.")
+
+        weights = torch.mean(self.gradients, dim=[2, 3], keepdim=True)
+        cam = torch.sum(weights * self.feature_maps, dim=1, keepdim=True)
+        cam = torch.relu(cam)
+        
+        # 归一化
+        cam -= torch.min(cam)
+        cam /= torch.max(cam)
+        
+        return cam.detach().cpu().squeeze().numpy()
+
+    def remove_hooks(self):
+        for hook in self.hooks:
+            hook.remove()
 
 # 配置
 MODEL_PATH = 'pretrained/xception-b5690688.pth'  # 替换为模型权重路径
@@ -92,39 +142,60 @@ def main(img_path, save_dir):
     vis_img = vis_img.permute(1,2,0).numpy() * std + mean
     vis_img = np.clip(vis_img * 255, 0, 255).astype(np.uint8)
 
-    with open(ARCH_PATH, 'r') as f:
-        config = yaml.safe_load(f)
-    model = DAMA(in_channels=3, dim=128, num_heads=4, levels=3, batch_size=1)
+    # --- 加载完整模型 ---
+    model = DeepfakeDetector(batch_size=1, dama_dim=128)
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE), strict=False)
     model.eval()
     model.to(DEVICE)
 
+    # --- Grad-CAM for Dynamic Mode ---
+    print("--- Generating Grad-CAM for Dynamic Mode ---")
+    # 目标层是DAMA模块内部的fusion_gate的第一个卷积层
+    target_layer = model.dama.fusion_gate[0]
+    grad_cam = GradCAM(model, target_layer)
+    
+    # 模拟视频输入 (B, K, C, H, W)
+    video_tensor = img_tensor.unsqueeze(1) 
+    
+    # 计算 Grad-CAM
+    cam_map = grad_cam(video_tensor, class_idx=0) # 假设类别0是'fake'
+    grad_cam.remove_hooks()
+
+    # 可视化 Grad-CAM
+    grad_cam_save_path = os.path.join(save_dir, 'grad_cam_dynamic.png')
+    show_feature_map_on_image(vis_img, torch.from_numpy(cam_map), 'Grad-CAM (Dynamic Mode)', grad_cam_save_path)
+    print(f"Grad-CAM saved to {grad_cam_save_path}")
+
+
+    # --- 原始特征图可视化 ---
+    print("\n--- Generating Original Feature Maps ---")
     # 注册空间分支早期特征（EfficientNet-b0 features前几层）
-    if hasattr(model.sfe, "efficient_net"):
-        print("[DEBUG] efficient_net children:", list(model.sfe.efficient_net.named_children()))
-        if hasattr(model.sfe.efficient_net, "features"):
-            model.sfe.efficient_net.features[0].register_forward_hook(save_feature_map('early_space_f0'))
-            model.sfe.efficient_net.features[1].register_forward_hook(save_feature_map('early_space_f1'))
-            model.sfe.efficient_net.features[2].register_forward_hook(save_feature_map('early_space_f2'))
+    if hasattr(model.dama.sfe, "efficient_net"):
+        print("[DEBUG] efficient_net children:", list(model.dama.sfe.efficient_net.named_children()))
+        if hasattr(model.dama.sfe.efficient_net, "features"):
+            model.dama.sfe.efficient_net.features[0].register_forward_hook(save_feature_map('early_space_f0'))
+            model.dama.sfe.efficient_net.features[1].register_forward_hook(save_feature_map('early_space_f1'))
+            model.dama.sfe.efficient_net.features[2].register_forward_hook(save_feature_map('early_space_f2'))
     # 注册频域分支早期特征（MWT第一层卷积）
-    if hasattr(model.mwt, "dwt"):
+    if hasattr(model.dama.mwt, "dwt"):
         # 只抓取wavelet_transform的高频输出
-        orig_wavelet_transform = model.mwt.wavelet_transform
+        orig_wavelet_transform = model.dama.mwt.wavelet_transform
         def wavelet_hook(x, target_size):
             ll, hf = orig_wavelet_transform(x, target_size)
             feature_maps['early_freq'] = hf.detach().cpu()
             return ll, hf
-        model.mwt.wavelet_transform = wavelet_hook
+        model.dama.mwt.wavelet_transform = wavelet_hook
 
-    model.sfe.register_forward_hook(save_feature_map('space'))
-    model.mwt.register_forward_hook(save_feature_map('freq'))
-    model.fusion_gate.register_forward_hook(save_feature_map('fusion'))
-    for m in model.cross_att.layers:
+    model.dama.sfe.register_forward_hook(save_feature_map('space'))
+    model.dama.mwt.register_forward_hook(save_feature_map('freq'))
+    model.dama.fusion_gate.register_forward_hook(save_feature_map('fusion'))
+    for m in model.dama.cross_att.layers:
         m[1].register_forward_hook(save_attention_weights('cross_attn_space2freq'))
         m[3].register_forward_hook(save_attention_weights('cross_attn_freq2space'))
 
     with torch.no_grad():
-        _ = model._process_frame(img_tensor)
+        # 使用DAMA的_process_frame来获取单帧特征
+        _ = model.dama._process_frame(img_tensor)
 
     print("[DEBUG] space feature shape:", feature_maps['space'][0].shape)
     print("[DEBUG] freq feature shape:", feature_maps['freq'][0].shape)
