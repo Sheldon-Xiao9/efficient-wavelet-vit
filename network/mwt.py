@@ -21,15 +21,15 @@ class MWT(nn.Module):
         
         # 频域卷积
         self.freq_conv = nn.Sequential(
-            nn.Conv2d(dama_dim, dama_dim, kernel_size=3, padding=1, stride=2),
-            nn.BatchNorm2d(dama_dim),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(dama_dim, dama_dim, kernel_size=3, padding=1, stride=2),
-            nn.BatchNorm2d(dama_dim),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(dama_dim, dama_dim, kernel_size=3, padding=1, stride=2),
-            nn.BatchNorm2d(dama_dim),
-            nn.ReLU(inplace=True),
+            # nn.Conv2d(dama_dim, dama_dim, kernel_size=3, padding=1, stride=2),
+            # nn.BatchNorm2d(dama_dim),
+            # nn.ReLU(inplace=True),
+            # nn.Conv2d(dama_dim, dama_dim, kernel_size=3, padding=1, stride=2),
+            # nn.BatchNorm2d(dama_dim),
+            # nn.ReLU(inplace=True),
+            # nn.Conv2d(dama_dim, dama_dim, kernel_size=3, padding=1, stride=2),
+            # nn.BatchNorm2d(dama_dim),
+            # nn.ReLU(inplace=True),
             nn.Conv2d(dama_dim, dama_dim, kernel_size=3, padding=1, stride=2),
             nn.BatchNorm2d(dama_dim),
             nn.ReLU(inplace=True)
@@ -37,7 +37,7 @@ class MWT(nn.Module):
         
         self.freq_pool = nn.Sequential(
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(dama_dim, dama_dim, kernel_size=3, padding=1),
+            nn.Conv2d(dama_dim, dama_dim, kernel_size=3, padding=1, stride=2),
             nn.BatchNorm2d(dama_dim),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d(1)
@@ -47,18 +47,18 @@ class MWT(nn.Module):
         self.hf_conv = nn.ModuleDict({
             'seperate': nn.ModuleList([
                 nn.Sequential(
-                nn.Conv2d(in_channels, 3*in_channels, kernel_size=3, padding=1),
-                nn.BatchNorm2d(3*in_channels),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(3*in_channels, 6*in_channels, kernel_size=3, padding=1),
-                nn.BatchNorm2d(6*in_channels),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(6*in_channels, 12*in_channels, kernel_size=3, padding=1),
+                # nn.Conv2d(in_channels, 3*in_channels, kernel_size=3, padding=1),
+                # nn.BatchNorm2d(3*in_channels),
+                # nn.ReLU(inplace=True),
+                # nn.Conv2d(3*in_channels, 6*in_channels, kernel_size=3, padding=1),
+                # nn.BatchNorm2d(6*in_channels),
+                # nn.ReLU(inplace=True),
+                nn.Conv2d(in_channels, 6*in_channels, kernel_size=3, padding=1),
                 nn.BatchNorm2d(12*in_channels),
                 nn.ReLU(inplace=True)
             ) for _ in range(3)]),
             'fusion': nn.Sequential(
-                nn.Conv2d(36*in_channels, dama_dim, kernel_size=3, padding=1),
+                nn.Conv2d(18*in_channels, dama_dim, kernel_size=3, padding=1),
                 nn.BatchNorm2d(dama_dim),
                 nn.ReLU(inplace=True)
             )
