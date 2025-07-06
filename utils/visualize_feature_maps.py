@@ -68,6 +68,44 @@ def show_feature_map_on_image(img, fmap, title, save_path):
     plt.savefig(save_path, bbox_inches='tight')
     plt.close()
 
+def show_feature_map_side_by_side(img, fmap, title, save_path):
+    fmap = fmap.squeeze() # From [C, 1, 1] to [C]
+    
+    # Reshape 1D feature vector to a vertical bar (C, 1)
+    if fmap.ndim == 1:
+        fmap = fmap.reshape(-1, 1)
+    # For 2D feature maps, take the mean across channels
+    elif fmap.ndim == 3:
+        fmap = fmap.mean(0)
+
+    fmap = fmap.numpy()
+    fmap = (fmap - fmap.min()) / (fmap.max() - fmap.min() + 1e-8)
+
+    # For 2D maps, resize to match image height for better visualization
+    if fmap.ndim == 2 and fmap.shape[1] > 1:
+        fmap = cv2.resize(fmap, (fmap.shape[1], img.shape[0]))
+
+    heatmap = cv2.applyColorMap(np.uint8(255 * fmap), cv2.COLORMAP_JET)
+
+    fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+    fig.suptitle(title)
+
+    axs[0].imshow(img)
+    axs[0].axis('off')
+    # axs[0].set_title('Transformed Image')
+
+    axs[1].imshow(heatmap[..., ::-1]) # Convert BGR to RGB for display
+    axs[1].axis('off')
+    # axs[1].set_title('Feature Map')
+    
+    # Adjust aspect ratio for the vertical bar to make it look like a line
+    if fmap.shape[1] == 1:
+        aspect = fmap.shape[0] / (fmap.shape[1] * 20) # Make it tall and thin
+        axs[1].set_aspect(aspect)
+
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close(fig)
+
 def show_attention(attn, img, title, save_path):
     attn = attn.mean(1)[0]
     attn_map = attn.mean(0).cpu().numpy()
@@ -138,9 +176,9 @@ def main(img_path, save_dir):
     if 'early_freq' in feature_maps:
         print("[DEBUG] early_freq feature shape:", feature_maps['early_freq'][0].shape)
 
-    show_feature_map_on_image(vis_img, feature_maps['space'][0], 'Space Feature', os.path.join(save_dir, 'space_feature.png'))
-    show_feature_map_on_image(vis_img, feature_maps['freq'][0], 'Freq Feature', os.path.join(save_dir, 'freq_feature.png'))
-    show_feature_map_on_image(vis_img, feature_maps['fusion'][0], 'Fusion Feature', os.path.join(save_dir, 'fusion_feature.png'))
+    show_feature_map_side_by_side(vis_img, feature_maps['space'][0], 'Space Feature', os.path.join(save_dir, 'space_feature.png'))
+    show_feature_map_side_by_side(vis_img, feature_maps['freq'][0], 'Freq Feature', os.path.join(save_dir, 'freq_feature.png'))
+    show_feature_map_side_by_side(vis_img, feature_maps['fusion'][0], 'Fusion Feature', os.path.join(save_dir, 'fusion_feature.png'))
     if 'early_space_f0' in feature_maps:
         show_feature_map_on_image(vis_img, feature_maps['early_space_f0'][0], 'EfficientNet-b0 features[0]', os.path.join(save_dir, 'efficientnet_b0_features0.png'))
     if 'early_space_f1' in feature_maps:
