@@ -18,7 +18,7 @@ from sklearn.metrics import (  # type: ignore
 )
 from tqdm import tqdm
 
-from config.data_loader import FaceForensicsLoader, CelebDFLoader
+from config.data_loader import FaceForensicsLoader, CelebDFLoader, DiffusionLoader
 from config.transforms import get_transforms
 from config.focal_loss import BinaryFocalLoss
 from train import combined_loss
@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument("--frame-count", "--fc", type=int, default=300,
                         help="Number of frames per video")
     parser.add_argument("--dataset", "--ds", type=str, default="ff++",
-                        choices=["ff++", "celeb-df"],
+                        choices=["ff++", "celeb-df", "diffusion"],
                         help="Dataset to evaluate")
     parser.add_argument("--test-list", "--tl", type=str, 
                         default="Celeb-DF-v2/List_of_testing_videos.txt",
@@ -96,6 +96,13 @@ def get_dataloader(args):
             frame_count=args.frame_count,
             transform=transforms['test'],
             testing_file=args.test_list
+        )
+    elif args.dataset == "diffusion":
+        dataset = DiffusionLoader(
+            root=args.root,
+            frame_count=args.frame_count,
+            transform=transforms['test'],
+            single_method=getattr(args, 'single_method', None)
         )
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
@@ -165,6 +172,18 @@ def evaluate(model, dataloader, device="cuda", args=None):
     
     return metrics, np.array(all_preds), np.array(all_labels)
 
+def print_metrics(metrics):
+    print("Results:")
+    print(f"Test Loss:      {metrics['loss']:.4f}")
+    print(f"Accuracy:       {metrics['accuracy']:.4f}")
+    print(f"AUC:            {metrics['auc']:.4f}")
+    print(f"Precision:      {metrics['precision']:.4f}")
+    print(f"Recall:         {metrics['recall']:.4f}")
+    print(f"F1 Score:       {metrics['f1']:.4f}")
+    print(f"Average Precision: {metrics['ap']:.4f}")
+    print(f"Confusion Matrix:")
+    print(metrics['conf_matrix'])
+
 def main():
     args = parse_args()
     
@@ -197,16 +216,7 @@ def main():
         all_results['All'] = metrics
         
         # 输出整体评估结果
-        print("Results:")
-        print(f"Test Loss:      {metrics['loss']:.4f}")
-        print(f"Accuracy:       {metrics['accuracy']:.4f}")
-        print(f"AUC:            {metrics['auc']:.4f}")
-        print(f"Precision:      {metrics['precision']:.4f}")
-        print(f"Recall:         {metrics['recall']:.4f}")
-        print(f"F1 Score:       {metrics['f1']:.4f}")
-        print(f"Average Precision: {metrics['ap']:.4f}")
-        print(f"Confusion Matrix:")
-        print(metrics['conf_matrix'])
+        print_metrics(metrics)
         
         # 按照每种方法单独评估
         for method in methods:
@@ -225,17 +235,7 @@ def main():
             all_results[method] = method_metrics
             
             # 输出特定方法的评估结果
-            print("Results:")
-            print(f"Test Loss:      {method_metrics['loss']:.4f}")
-            print(f"Accuracy:       {method_metrics['accuracy']:.4f}")
-            print(f"AUC:            {method_metrics['auc']:.4f}")
-            print(f"Precision:      {method_metrics['precision']:.4f}")
-            print(f"Recall:         {method_metrics['recall']:.4f}")
-            print(f"F1 Score:       {method_metrics['f1']:.4f}")
-            print(f"Average Precision: {method_metrics['ap']:.4f}")
-            print(f"Confusion Matrix:")
-            print(method_metrics['conf_matrix'])
-            print("="*50)
+            print_metrics(method_metrics)
         
         # 将结果保存为CSV文件
         results_df = []
@@ -298,7 +298,7 @@ def main():
             print(f"Saved visualizations to {os.path.join(args.output, 'visualizations')}")
     
     # 如果是CelebDF数据集
-    else:
+    elif args.dataset == "celeb-df":
         dataloader = get_dataloader(args)
     
         # 评估模型
@@ -309,17 +309,8 @@ def main():
         # 输出评估结果
         print("\n"+"="*50)
         print(f"Evaluation complete in {eval_time:.2f}s")
-        print("Results:")
-        print(f"Test Loss:      {metrics['loss']:.4f}")
-        print(f"Accuracy:       {metrics['accuracy']:.4f}")
-        print(f"AUC:            {metrics['auc']:.4f}")
-        print(f"Precision:      {metrics['precision']:.4f}")
-        print(f"Recall:         {metrics['recall']:.4f}")
-        print(f"F1 Score:       {metrics['f1']:.4f}")
-        print(f"Average Precision: {metrics['ap']:.4f}")
-        print(f"Confusion Matrix:")
-        print(metrics['conf_matrix'])
-        print("="*50)
+        
+        print_metrics(metrics)
         
         # 保存为CSV
         results = {
@@ -349,6 +340,21 @@ def main():
             orth_loss = metrics['orth_loss']
             viz.plot_metrics(metrics, labels, preds, orth_loss)
             print(f"Saved visualizations to {args.output}")
+    elif args.dataset == "diffusion":
+        methods = ['DDPM', 'DDIM', 'LDM']
+        all_results = {}
+        
+        for method in methods:
+            print("\n" + "="*50)
+            print(f"Evaluating on {method}")
+            
+            # 为特定方法创建数据加载器
+            args.single_method = method
+            method_dataloader = get_dataloader(args)
+            
+            # 评估特定方法
+            start_time = time.time()
+            method_metrics, method_preds, method_labels = evaluate(model, method_dataloader, device=device, args=args)
 
 if __name__ == "__main__":
     main()

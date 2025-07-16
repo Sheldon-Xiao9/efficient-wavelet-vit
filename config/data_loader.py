@@ -536,3 +536,169 @@ class CelebDFLoader(Dataset):
         frames = torch.stack([frame for frame in frames if isinstance(frame, torch.Tensor)])
         
         return frames, label
+
+class DiffusionLoader(Dataset):
+    """
+    DiffusionLoader - 加载Diffusion模型生成帧数据集
+    """
+    def __init__(self,
+                 root,
+                 frame_count=1,
+                 transform=None,
+                 methods=['DDPM', 'DDIM', 'LDM']):
+        """
+        初始化DiffusionLoader
+        
+        :param root: 数据集的根目录
+        :type root: str
+        :param frame_count: 每个视频的帧数（固定为1）
+        :type frame_count: int
+        :param transform: 数据预处理
+        :type transform: callable
+        :param methods: 扩散模型方法列表
+        :type methods: list
+        """
+        super().__init__()
+        self.root = root
+        self.frame_count = frame_count
+        self.transform = transform
+        self.methods = methods
+        
+        # 加载真实图片与生成图片
+        self.real_images, self.fake_images = self._load_image_paths()
+        
+        print(f"Loaded {len(self.real_images)} real images and {len(self.fake_images)} fake images")
+        print(f"Fake images by method:")
+        
+        method_counts = {}
+        for img_info in self.fake_images:
+            method = img_info['method']
+            method_counts[method] = method_counts.get(method, 0) + 1
+        
+        for method, count in method_counts.items():
+            print(f"  - {method}: {count} images")
+        
+    def __len__(self):
+        """返回数据集大小"""
+        return len(self.real_images) + len(self.fake_images)
+    
+    def _load_image_paths(self):
+        """
+        加载图片路径
+        
+        :return: 返回真实图片和伪造图片路径``(real_images, fake_images)``
+        :rtype: tuple
+        
+        ``real_images``
+            包含真实图片路径的列表
+        ``fake_images``
+            包含伪造图片路径、方法和标签的字典列表
+        """
+        real_images = []
+        fake_images = []
+        
+        # 加载真实图片 (CelebA-Real)
+        real_dir = os.path.join(self.root, 'CelebA-Real')
+        if os.path.exists(real_dir):
+            for img_file in os.listdir(real_dir):
+                if img_file.endswith('.jpg') or img_file.endswith('.png'):
+                    img_path = os.path.join(real_dir, img_file)
+                    real_images.append(img_path)
+        else:
+            print(f"Warning: Real images directory '{real_dir}' not found")
+        
+        # 加载生成图片 (DDPM, DDIM, LDM)
+        for method in self.methods:
+            method_dir = os.path.join(self.root, method)
+            if os.path.exists(method_dir):
+                for img_file in os.listdir(method_dir):
+                    if img_file.endswith('.png') or img_file.endswith('.jpg'):
+                        img_path = os.path.join(method_dir, img_file)
+                        fake_images.append({
+                            'path': img_path,
+                            'method': method,
+                            'filename': img_file
+                        })
+            else:
+                print(f"Warning: Method directory '{method_dir}' not found")
+        
+        # 对图片进行排序以确保一致性
+        real_images.sort()
+        fake_images.sort(key=lambda x: x['path'])
+        
+        return real_images, fake_images
+    
+    def __getitem__(self, index):
+        """
+        获取指定索引的样本
+        
+        :param index: 数据索引
+        :type index: int
+        :return: 返回帧与标签的元组``(frames, label)``
+        :rtype: tuple
+        
+        ``frames``
+            帧序列张量 (T x C x H x W)，T=1
+        ``label``
+            标签，0=真实，1=伪造
+        """
+        if index < len(self.real_images):
+            # 真实图片
+            img_path = self.real_images[index]
+            label = 0
+        else:
+            # 伪造图片
+            fake_index = index - len(self.real_images)
+            if fake_index >= len(self.fake_images):
+                raise IndexError(f"Index '{index}' out of range")
+            img_path = self.fake_images[fake_index]['path']
+            label = 1
+        
+        # 读取图片
+        img = cv2.imread(img_path)
+        if img is None:
+            raise FileNotFoundError(f"Could not load image from '{img_path}'")
+        
+        # 转换颜色空间
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        # 应用变换
+        if self.transform:
+            img = self.transform(img)
+        
+        # 由于每个图片都是单独的"视频"，我们需要添加时间维度
+        # 转换为张量 (T x C x H x W)，其中T=1
+        if isinstance(img, torch.Tensor):
+            frames = img.unsqueeze(0)  # 添加时间维度
+        else:
+            raise TypeError(f"Transform should return torch.Tensor, got {type(img)}")
+        
+        return frames, label
+    
+    def get_image_info(self, index):
+        """
+        获取指定索引图片的详细信息
+        
+        :param index: 数据索引
+        :type index: int
+        :return: 图片信息字典
+        :rtype: dict
+        """
+        if index < len(self.real_images):
+            return {
+                'path': self.real_images[index],
+                'method': 'Real',
+                'label': 0,
+                'filename': os.path.basename(self.real_images[index])
+            }
+        else:
+            fake_index = index - len(self.real_images)
+            if fake_index >= len(self.fake_images):
+                raise IndexError(f"Index '{index}' out of range")
+            img_info = self.fake_images[fake_index]
+            return {
+                'path': img_info['path'],
+                'method': img_info['method'],
+                'label': 1,
+                'filename': img_info['filename']
+            }
