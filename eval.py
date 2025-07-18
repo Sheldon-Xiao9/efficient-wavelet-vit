@@ -355,6 +355,59 @@ def main():
             # 评估特定方法
             start_time = time.time()
             method_metrics, method_preds, method_labels = evaluate(model, method_dataloader, device=device, args=args)
+            eval_time = time.time() - start_time
+            print(f"Evaluation on {method} complete in {eval_time:.2f}s")
+            all_results[method] = method_metrics
+            
+            # 输出特定方法的评估结果
+            print_metrics(method_metrics)
+            
+        # 将结果保存为CSV文件
+        results_df = []
+        
+        for method_name, metrics in all_results.items():
+            # 提取主要指标
+            row = {
+                'Method': method_name,
+                'Loss': metrics['loss'],
+                'Accuracy': metrics['accuracy'],
+                'AUC': metrics['auc'],
+                'Precision': metrics['precision'],
+                'Recall': metrics['recall'],
+                'F1': metrics['f1'],
+                'AP': metrics['ap'],
+                'TN': metrics['conf_matrix'][0, 0],
+                'FP': metrics['conf_matrix'][0, 1],
+                'FN': metrics['conf_matrix'][1, 0],
+                'TP': metrics['conf_matrix'][1, 1]
+            }
+            results_df.append(row)
+            
+        # 转换为DataFrame并保存
+        df = pd.DataFrame(results_df)
+        output_path = os.path.join(args.output, "eval_results.csv")
+        df.to_csv(output_path, index=False)
+        
+        print(f"Saved evaluation results to {output_path}")
+        
+        if args.visualize:
+            print("Generating evaluation visualizations...")
+            
+            # 为每种方法创建单独的可视化
+            for method in methods:
+                method_viz_dir = os.path.join(args.output, "visualizations", method)
+                os.makedirs(method_viz_dir, exist_ok=True)
+                method_viz = EvalVisualization(method_viz_dir)
+                
+                # 获取该方法的结果
+                method_metrics = all_results[method]
+                method_labels = np.array(method_metrics.get('labels', []))
+                method_preds = np.array(method_metrics.get('preds', []))
+                orth_loss = method_metrics['orth_loss']
+                
+                method_viz.plot_metrics(method_metrics, method_labels, method_preds, orth_loss)
+                
+            print(f"Saved visualizations to {os.path.join(args.output, 'visualizations')}")
 
 if __name__ == "__main__":
     main()

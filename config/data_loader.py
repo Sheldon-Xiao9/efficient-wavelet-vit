@@ -545,7 +545,8 @@ class DiffusionLoader(Dataset):
                  root,
                  frame_count=1,
                  transform=None,
-                 methods=['DDPM', 'DDIM', 'LDM']):
+                 methods=['DDPM', 'DDIM', 'LDM'],
+                 single_method=None):
         """
         初始化DiffusionLoader
         
@@ -562,7 +563,13 @@ class DiffusionLoader(Dataset):
         self.root = root
         self.frame_count = frame_count
         self.transform = transform
-        self.methods = methods
+        self.single_method = single_method
+        
+        # 如果指定了单一方法，只使用该方法
+        if single_method:
+            self.methods = [single_method]
+        else:
+            self.methods = methods
         
         # 加载真实图片与生成图片
         self.real_images, self.fake_images = self._load_image_paths()
