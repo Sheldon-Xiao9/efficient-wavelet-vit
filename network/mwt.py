@@ -54,7 +54,7 @@ class MWT(nn.Module):
                 # nn.BatchNorm2d(6*in_channels),
                 # nn.ReLU(inplace=True),
                 nn.Conv2d(in_channels, 6*in_channels, kernel_size=3, padding=1),
-                nn.BatchNorm2d(12*in_channels),
+                nn.BatchNorm2d(6*in_channels),
                 nn.ReLU(inplace=True)
             ) for _ in range(3)]),
             'fusion': nn.Sequential(
