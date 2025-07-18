@@ -14,7 +14,8 @@ from sklearn.metrics import (  # type: ignore
     recall_score,
     f1_score,
     confusion_matrix,
-    average_precision_score
+    average_precision_score,
+    roc_curve
 )
 from tqdm import tqdm
 
@@ -75,6 +76,22 @@ def load_model(model_path, dim=128, device="cuda"):
     model.eval()
     return model
 
+def calculate_eer(labels, scores):
+    """
+    计算等错误率 (Equal Error Rate, EER)
+    
+    :param labels: 真实标签 (0 for real, 1 for fake)
+    :param scores: 预测分数 (probability of being fake)
+    :return: EER值
+    """
+    fpr, tpr, thresholds = roc_curve(labels, scores)
+    fnr = 1 - tpr
+    
+    # 找到FPR和FNR最接近的点
+    eer_threshold = thresholds[np.nanargmin(np.absolute((fnr - fpr)))]
+    eer = fpr[np.nanargmin(np.absolute((fnr - fpr)))]
+    
+    return eer, eer_threshold
 
 def get_dataloader(args):
     """获取数据加载器"""
@@ -156,11 +173,15 @@ def evaluate(model, dataloader, device="cuda", args=None):
     
     binary_preds = [1 if p >= 0.5 else 0 for p in all_preds]
     
+    eer, eer_threshold = calculate_eer(all_labels, all_preds)
+    
     metrics = {
         'loss': test_loss,
         'orth_loss': test_orth_loss,
         'accuracy': accuracy_score(all_labels, binary_preds),
         'auc': roc_auc_score(all_labels, all_preds),
+        'eer': eer,
+        'eer_threshold': eer_threshold,
         'precision': precision_score(all_labels, binary_preds),
         'recall': recall_score(all_labels, binary_preds),
         'f1': f1_score(all_labels, binary_preds),
@@ -177,6 +198,8 @@ def print_metrics(metrics):
     print(f"Test Loss:      {metrics['loss']:.4f}")
     print(f"Accuracy:       {metrics['accuracy']:.4f}")
     print(f"AUC:            {metrics['auc']:.4f}")
+    print(f"EER:            {metrics['eer']:.4f}")
+    print(f"EER Threshold:  {metrics['eer_threshold']:.4f}")
     print(f"Precision:      {metrics['precision']:.4f}")
     print(f"Recall:         {metrics['recall']:.4f}")
     print(f"F1 Score:       {metrics['f1']:.4f}")
